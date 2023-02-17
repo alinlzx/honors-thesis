@@ -1,3 +1,3 @@
-Honors Thesis 
+# Honors Thesis 
 
 readme coming soon :)
