@@ -1,0 +1,4 @@
+"0",""
+"0","ggplot(congress_sentiments_week) + geom_line(aes(x = week, y = afinn_sentiment), color = ""blue"", alpha = 0.5) + "
+"0","  geom_ma(aes(x = week, y = afinn_sentiment), ma_fun = SMA, n = 52, na.rm = T, color = ""red"") + theme_minimal()"
+"0",""

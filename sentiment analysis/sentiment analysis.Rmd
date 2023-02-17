@@ -1,0 +1,166 @@
+---
+title: "sentiment analysis"
+author: "Alex Lin"
+date: "2/5/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Sentiment Analysis
+
+```{r}
+
+library(readxl)
+library(dplyr)
+library(syuzhet)
+library(ggplot2)
+library(tidyquant)
+library(lubridate)
+
+```
+
+## Data Cleaning
+
+#### Processing US Congress Data
+
+```{r}
+
+congress <- rbind(cong1, cong2) 
+congress <- congress[order(congress$Timestamp),]
+colnames(congress) <- c("date","title","orig_text","subhead","text")
+
+```
+
+#### Processing US Pres Data
+
+```{r}
+
+pres <- pres[,-1]
+# pres <- read_excel("~/PycharmProjects/thesis/preslib200023.xlsx")[,-1]
+colnames(pres) <- c("title","date","orig_text","text","subhead")
+
+```
+
+
+## Sentiment Analysis
+
+### Congress Data
+
+#### Sentiment Analysis Function
+
+```{r}
+
+get_senti <- function(df) {
+  
+  df <- df %>% mutate(afinn_sentiment = get_sentiment(text, method = "afinn"),
+                   bing_sentiment = get_sentiment(text, method = "bing"))
+  
+  return(df)
+  
+}
+
+```
+
+#### Applying the Function
+
+```{r}
+
+congress_sentiments <- get_senti(congress)
+
+```
+
+### Visualizing Sentiments
+
+```{r}
+
+ggplot(congress_sentiments) + geom_ma(aes(x = date, y = afinn_sentiment), ma_fun = SMA, n = 300, na.rm = T) + 
+  geom_ma(aes(x = date, y = afinn_sentiment), ma_fun = SMA, n = 3000, na.rm = T, color = "red") + theme_minimal()
+
+```
+
+Grouping by WEEK:
+
+```{r}
+
+# congress_sentiments$date <- as.Date(congress_sentiments$date)
+
+congress_sentiments$week <- difftime(congress_sentiments$date, as.Date("2000-01-01"), units = "weeks") %>%
+  as.numeric() %>%
+  floor()
+
+```
+
+```{r}
+
+congress_sentiments_week <- congress_sentiments %>%
+  group_by(week) %>%
+  summarise(afinn_sentiment = mean(afinn_sentiment), bing_sentiment = mean(bing_sentiment),
+            doc_count = n())
+
+congress_sentiments_week$week <- as.Date("2000-01-01") + congress_sentiments_week$week * 7
+
+```
+
+Now visualizing ma by WEEK (blue) and approximate MONTH (red)
+
+```{r}
+
+ggplot(congress_sentiments_week) + geom_line(aes(x = week, y = afinn_sentiment), color = "blue", alpha = 0.5) + 
+  geom_ma(aes(x = week, y = afinn_sentiment), ma_fun = SMA, n = 52, na.rm = T, color = "red") + theme_minimal()
+
+```
+
+### Presidential Library Data
+
+#### Applying senti analysis function:
+
+```{r}
+
+pres_sentiments <- get_senti(pres)
+
+```
+
+#### Grouping pres documents by MONTH: 
+
+```{r}
+
+pres_sentiments$month <- format(pres_sentiments$date, "%Y-%m")
+
+```
+
+Applying a group_by function: 
+
+```{r}
+
+pres_sentiments_month <- pres_sentiments %>%
+  group_by(month) %>%
+  summarise(afinn_sentiment = mean(afinn_sentiment), bing_sentiment = mean(bing_sentiment),
+            doc_count = n())
+
+pres_sentiments_month$month <- as.Date(paste(pres_sentiments_month$month, "-01", sep = ""))
+
+```
+
+#### Visualizing sentiments:
+
+```{r}
+
+ggplot(pres_sentiments_month) + geom_line(aes(x = month, y = afinn_sentiment), color = "blue", alpha = 0.5) + 
+  geom_ma(aes(x = month, y = afinn_sentiment), ma_fun = SMA, n = 12, na.rm = T, color = "red") + theme_minimal()
+
+
+```
+
+
+```{r}
+
+ggplot() + # geom_ma(data = pres_sentiments_month, aes(x = month, y = afinn_sentiment), ma_fun = SMA, n = 12, na.rm = T, color = "blue") + 
+  geom_ma(data = pres_sentiments_month, aes(x = month, y = bing_sentiment), ma_fun = SMA, n = 12, na.rm = T, color = "purple") + 
+  # geom_ma(data = congress_sentiments_week,aes(x = week, y = afinn_sentiment), ma_fun = SMA, n = 52, na.rm = T, color = "red") + 
+  geom_ma(data = congress_sentiments_week,aes(x = week, y = bing_sentiment), ma_fun = SMA, n = 52, na.rm = T, color = "orange") + theme_minimal()
+
+```
+

@@ -1,0 +1,7 @@
+"0",""
+"0","# congress_sentiments$date <- as.Date(congress_sentiments$date)"
+"0",""
+"0","congress_sentiments$week <- difftime(congress_sentiments$date, as.Date(""2000-01-01""), units = ""weeks"") %>%"
+"0","  as.numeric() %>%"
+"0","  floor()"
+"0",""

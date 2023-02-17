@@ -1,0 +1,27 @@
+{
+    "id": "E83AE523",
+    "path": "~/PycharmProjects/thesis/sentiment analysis/sentiment analysis.Rmd",
+    "project_path": "sentiment analysis.Rmd",
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1675632208718.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "cursorPosition": "161,58",
+        "last_setup_crc32": "b7c3f4fdbb338d19",
+        "scrollLine": "155",
+        "tempName": "Untitled1",
+        "Source": "Source"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1676672782,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1676672782508,
+    "read_only": false,
+    "read_only_alternatives": []
+}

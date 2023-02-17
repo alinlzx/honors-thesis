@@ -1,0 +1,8 @@
+"0",""
+"0","pres_sentiments_month <- pres_sentiments %>%"
+"0","  group_by(month) %>%"
+"0","  summarise(afinn_sentiment = mean(afinn_sentiment), bing_sentiment = mean(bing_sentiment),"
+"0","            doc_count = n())"
+"0",""
+"0","pres_sentiments_month$month <- as.Date(paste(pres_sentiments_month$month, ""-01"", sep = """"))"
+"0",""

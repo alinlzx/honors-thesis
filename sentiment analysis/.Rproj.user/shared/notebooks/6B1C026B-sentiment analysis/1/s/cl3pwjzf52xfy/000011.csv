@@ -1,0 +1,3 @@
+"0",""
+"0","pres_sentiments$month <- format(pres_sentiments$date, ""%Y-%m"")"
+"0",""

@@ -1,0 +1,4 @@
+"0",""
+"0","congress_sentiments <- get_senti(congress)"
+"0",""
+"0","View(congress_sentiments_day)"

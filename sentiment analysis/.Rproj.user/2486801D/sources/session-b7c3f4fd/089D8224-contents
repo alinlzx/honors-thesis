@@ -1,0 +1,117 @@
+# Setting my WD. Path will be different for others:
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+
+# Loading some of the packages that I will use:
+packages <- c("dplyr","ggplot2","textdata","tidyverse","wordcloud2","tidytext","pdftools","ggpubr","ggthemes")
+install.packages(packages)
+
+library(dplyr)
+library(ggplot2)
+library(textdata)
+library(tidyverse)
+library("wordcloud2")
+library(tidytext)
+library("pdftools")
+library(ggpubr)
+library(ggthemes)
+
+
+# Here's the function to read-in the words from news articles you compile into pdfs:
+# (I also have some code so that you can filter out specific words that you want)
+pdfs <- c("name1.pdf","name2.pdf") #add pdf names here
+stop_words <- read.delim("NLTK's20of20stopwords.txt", header = F)
+enstop_words <- stop_words$V1
+read.pdfs <- function(x) {
+  df.x <- data.frame(country = paste(x), PubText = c(pdf_text())))
+  df.x <- df.x %>%
+    unnest_tokens(word, PubText)
+  df.x <- df.x %>%
+    filter(!word %in% enstop_words)
+  df.x$word <- as.character(df.x$word)
+  df.x
+}
+pdfs.list <- lapply(pdfs, read.pdfs)
+names(pdfs.list) = pdfs
+
+
+#Code to read-in words from each pdf INDIVIDUALLY:
+df<-data.frame(Article = "Article Name", PubText = c(pdf_text("name1.pdf"))) # add pdf here
+df <- df %>%
+  unnest_tokens(word, PubText)
+
+# Code to remove words that are filler/random/not important (again INDIVIDUALLY):
+stop_words <- read.delim("NLTK's20of20stopwords.txt", header = F)
+enstop_words <- stop_words$V1
+Remwords <- c("Comma-delineated list of words/letters you want to remove")
+df <- df %>%
+  filter(!word %in% Remwords) %>%
+  filter(!word %in% enstop_words)
+
+
+#Word occurrence count graph:
+pdfs.list$name1.pdf %>% # add an article name here
+  dplyr::count(word, sort = TRUE) %>%
+  head(20) %>%
+  mutate(df = reorder(word, n)) %>%
+  ggplot(aes(df, n)) +
+  geom_bar(stat = "identity") +
+  ylab("Occurrences") +
+  xlab("Words Mentioned in Article") +
+  coord_flip() + theme_classic() +
+  ggtitle("Title of Graph")
+
+
+#Word cloud for speech:
+df_words_counted <- speeches.list$name1.pdf %>% # add article name here
+  count(word, sort = TRUE) 
+pal <- c('#9e0142','#d53e4f','#f46d43','#fdae61','#fee08b','#ffffbf','#e6f598','#abdda4','#66c2a5','#3288bd','#5e4fa2')
+wordcloud2(filter(df_words_counted,n>12),fontFamily = "Georgia", color=rep_len(pal, nrow(df_words_counted)))
+#Note that the word cloud only includes words mentioned more than 12 times. We can change this sensitivity
+#based on needs of the project. 
+
+
+#Loading in the sentiments
+ennrc <- read.delim("NRC-Emotion-Lexicon-ForVariousLanguages.txt")
+ennrc <- ennrc[,1:11]
+ennrc$word <- esnrc$English.Word
+
+
+#Sentiment Analysis:
+sentiment.analysis <- function(x) {
+  x.words <- pdfs.list[[x]]
+  x.Wordsnrc <- full_join(x.words, emnrc, by = "word")
+  pos2 <- sum(x.Wordsnrc$positive == 1, na.rm=TRUE)
+  neg2 <- sum(x.Wordsnrc$negative == 1, na.rm=TRUE)
+  ang2 <- sum(x.Wordsnrc$anger == 1, na.rm=TRUE)
+  ant2 <- sum(x.Wordsnrc$anticipation == 1, na.rm=TRUE)
+  dis2 <- sum(x.Wordsnrc$disgust == 1, na.rm=TRUE)
+  fear2 <- sum(x.Wordsnrc$fear == 1, na.rm=TRUE)
+  joy2 <- sum(x.Wordsnrc$joy == 1, na.rm=TRUE)
+  sad2 <- sum(x.Wordsnrc$sadness == 1, na.rm=TRUE)
+  sur2 <- sum(x.Wordsnrc$surprise == 1, na.rm=TRUE)
+  tru2 <- sum(x.Wordsnrc$trust == 1, na.rm=TRUE)
+  x.sentiments <- data.frame(Sentiment = c("Positive", "Negative", "Anger", "Anticipation", "Disgust", "Fear","Joy","Sadness","Surprise","Trust"), Count = c(as.integer(pos2), as.integer(neg2), as.integer(ang2), as.integer(ant2), as.integer(dis2), as.integer(fear2), as.integer(joy2), as.integer(sad2), as.integer(sur2), as.integer(tru2)))
+  x.sentiments
+}
+sentiments.list <- lapply(pdfs, sentiment.analysis)
+names(sentiments.list) = pdfs
+
+# Making a pie-chart of the sentiments. This is a WIP
+# The graph fn that I've created below automatically filters out the positive and negative sentiment count,
+# because those two are usually duplicated (w/ other emotions) across many of the words.
+# You can change the fn below to add them back in.
+graph_sentiments <- function(k){
+  k.sentiments.df <- sentiments.list[[k]]
+  k.sentiments.df <- k.sentiments.df[!k.sentiments.df$Sentiment == c("Positive","Negative"),]
+  k.sentiments.df$perc <- k.sentiments.df$Count/sum(k.sentiments.df$Count)*100
+  ggplot(k.sentiments.df, aes(x= "", y=k.sentiments.df$perc, fill=k.sentiments.df$Sentiment))+
+    geom_bar(width = 1, stat = "identity") +
+    coord_polar("y", start=0) +
+    ggtitle("Sentiments Expressed in Article") +
+    ylab("Sentiment, by Percent of Words Analyzed") + xlab("") + theme_void() + 
+    scale_fill_discrete(name = "Sentiment")
+  
+}
+
+graph_sentiments("name1.pdf")

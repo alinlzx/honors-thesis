@@ -1,0 +1,5 @@
+"0",""
+"0","pres <- pres[,-1]"
+"0","# pres <- read_excel(""~/PycharmProjects/thesis/preslib200023.xlsx"")[,-1]"
+"0","colnames(pres) <- c(""title"",""date"",""orig_text"",""text"",""subhead"")"
+"0",""

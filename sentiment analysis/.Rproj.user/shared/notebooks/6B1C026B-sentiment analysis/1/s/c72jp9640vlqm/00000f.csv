@@ -1,0 +1,8 @@
+"0",""
+"0","congress_sentiments_week <- congress_sentiments %>%"
+"0","  group_by(week) %>%"
+"0","  summarise(afinn_sentiment = mean(afinn_sentiment), bing_sentiment = mean(bing_sentiment),"
+"0","            doc_count = n())"
+"0",""
+"0","congress_sentiments_week$week <- as.Date(""2000-01-01"") + congress_sentiments_week$week * 7"
+"0",""

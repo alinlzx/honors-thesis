@@ -1,0 +1,5 @@
+"0",""
+"0","congress <- rbind(cong1, cong2) "
+"0","congress <- congress[order(congress$Timestamp),]"
+"0","colnames(congress) <- c(""date"",""title"",""orig_text"",""subhead"",""text"")"
+"0",""
