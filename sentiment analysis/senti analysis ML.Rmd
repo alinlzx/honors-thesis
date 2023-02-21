@@ -1,0 +1,190 @@
+---
+title: "sentiment analysis ML"
+author: "Alex Lin"
+date: "2023-02-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+
+library(tidyverse)
+library(tidytext)
+library(dplyr)
+library(tm)
+library(textstem)
+library(splitTools)
+library(caret)
+
+library(naivebayes)
+library(e1071)
+library(randomForest)
+library(rpart)
+
+```
+
+
+## Data Processing: 
+
+```{r}
+
+congress_sample <- congress_sample[,c("date", "title", "text", "senti_label")]
+pres_sample <- pres_sample[,c("date", "title", "text", "senti_label")]
+
+us_sample <- rbind(pres_sample, congress_sample) %>% 
+  drop_na(senti_label)
+
+```
+
+
+## Text Processing: 
+
+A function that removes stopwords, lemmatizes the data, creates a document-term matrix, and performs tf-idf
+```{r}
+
+vectorizer_tfidf <- function (df) {
+  
+  corpus <- Corpus(VectorSource(df$text)) %>%  
+  tm_map(content_transformer(function(x) removeWords(x, stopwords("en")))) %>% # removes stopwords
+  tm_map(lemmatize_strings) # lemmatizes words
+
+  corpus_dtm <- DocumentTermMatrix(corpus) %>% # creates document-term matrix
+    weightTfIdf() %>% # tf-idf
+    as.matrix() 
+  
+  # df_tfidf <- cbind(as.data.frame(corpus_dtm), senti_label = df$senti_label) 
+  
+  zero_var_cols <- nearZeroVar(corpus_dtm, saveMetrics = TRUE)$nzv
+  corpus_dtm <- corpus_dtm[,-zero_var_cols]
+  
+  return(corpus_dtm)
+
+}
+
+```
+
+Applying the function to US sample data: 
+```{r}
+us_sample_tfidf <- vectorizer_tfidf(us_sample)
+```
+
+## Dimensionality Reduction
+
+Very crude dimensionality reduction by dropping very infrequent words:
+```{r}
+us_sample_tfidf <- us_sample_tfidf[,colSums(us_sample_tfidf != 0)>1]
+```
+
+Dimensionality reduction with PCA:
+```{r}
+pca.us <- prcomp(us_sample_tfidf, scale = T)
+us_sample_tfidf <- pca.us$x[,1:100]
+```
+
+## Getting the data ready for ML
+
+A function that performs train-test split:
+
+```{r}
+ml_ready <- function (dtm, original_data) {
+  
+  #Train-Test Split
+  group_index <- partition(original_data$senti_label, p = c(train = 0.8, test = 0.2))
+
+  train_data <- dtm[group_index$train,]
+  test_data <- dtm[group_index$test,]
+  
+  #Converting dependent var to numeric
+  original_data$senti_label_num <- ifelse(original_data$senti_label=="P", 1, -1)
+
+  train_label <- original_data$senti_label_num[group_index$train]
+  test_label <- original_data$senti_label_num[group_index$test]
+  
+  ml_list <- list("train_data" = train_data, "test_data" = test_data, 
+                  "train_label" = train_label, "test_label" = test_label,
+                  "group_index" = group_index)
+  return(ml_list)
+}
+```
+
+Applying the function to US data:
+```{r}
+
+ml_us <- ml_ready(us_sample_tfidf, us_sample)
+
+train_us <- ml_us$train_data
+test_us <- ml_us$test_data
+train_us_label <- ml_us$train_label
+test_us_label <- ml_us$test_label
+us_group <- ml_us$group_index
+
+```
+
+
+## Naive Bayes
+
+```{r}
+
+us.nb <- naive_bayes(x=train_us, y = as.factor(train_us_label))
+us.predict <- predict(us.nb, test_us)
+
+us_sample_test <- us_sample[us_group$test,] 
+us_sample_test$nb.label <- us.predict
+
+```
+
+Creating a confusion matrix for NB:
+```{r}
+table(us_sample_test$nb.label, test_us_label)
+```
+
+## SVM
+
+```{r}
+
+us.svm <- svm(x=train_us, y=as.factor(train_us_label), kernel = "linear")
+us.predict <- predict(us.svm, test_us)
+
+# us_sample_test <- us_sample[us_group$test,] 
+us_sample_test$svm.label <- ifelse(us.predict == "1", 1, -1)
+
+```
+
+Creating a confusion matrix for SVM:
+```{r}
+table(us_sample_test$svm.label, test_us_label)
+```
+## Random Forest
+
+```{r}
+
+us.randomforest <- randomForest(x=train_us, y=as.factor(train_us_label),
+                                mtry=25, tree=25)
+us.predict <- predict(us.randomforest, test_us)
+
+us_sample_test$randforest.label <- us.predict
+```
+
+Creating a confusion matrix for Random Forest:
+```{r}
+table(us_sample_test$randforest.label, test_us_label)
+```
+
+```{r}
+
+us.dt <- rpart(formula = as.factor(train_us_label) ~., data = as.data.frame(train_us))
+us.predict <- predict(us.dt, as.data.frame(test_us))
+
+us_sample_test$dt.label <- ifelse(us.predict[,1] < us.predict[,2], 1,-1)
+```
+
+Creating a confusion matrix for Random Forest:
+```{r}
+table(us_sample_test$dt.label, test_us_label)
+```
+
+
