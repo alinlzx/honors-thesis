@@ -19,6 +19,9 @@ library(tm)
 library(textstem)
 library(splitTools)
 library(caret)
+library(quanteda)
+library(stringr)
+library(plotROC)
 
 library(naivebayes)
 library(e1071)
@@ -30,14 +33,38 @@ library(rpart)
 
 ## Data Processing: 
 
+For US:
 ```{r}
 
 congress_sample <- congress_sample[,c("date", "title", "text", "senti_label")]
 pres_sample <- pres_sample[,c("date", "title", "text", "senti_label")]
 
-us_sample <- rbind(pres_sample, congress_sample) %>% 
-  drop_na(senti_label)
+us_sample <- rbind(pres_sample, congress_sample) %>% drop_na(senti_label) 
+us_sample$senti_label <-   ifelse(us_sample$senti_label=="P", 1, -1) 
 
+```
+
+For China
+```{r}
+
+peoplesdaily_sample <- filter(peoplesdaily_sample, grepl("US",cleaned_text))
+peoplesdaily_sample <- peoplesdaily_sample[,c("date", "headline", "cleaned_text", "senti_label", "...8")]
+colnames(peoplesdaily_sample) <- c("date","title","text","senti_label","relevance")
+
+```
+
+```{r}
+
+mofa_sample <- mofa_sample[,c("date","a_loc","cleaned_text","senti_label")]
+colnames(mofa_sample) <- c("date", "title", "text", "senti_label")
+
+china_sample <- rbind(mofa_sample, peoplesdaily_sample[,1:4]) %>% drop_na(senti_label)
+
+```
+
+Combining to form a master train/test ML dataset:
+```{r}
+the_sample <- rbind(china_sample, us_sample)
 ```
 
 
@@ -67,28 +94,37 @@ vectorizer_tfidf <- function (df) {
 
 ```
 
-Applying the function to US sample data: 
+A similar but maybe better function that creates bigrams while performing vectorization: 
 ```{r}
-us_sample_tfidf <- vectorizer_tfidf(us_sample)
+
+vectorizer_tfidf_bigram <- function (df) {
+  
+  df_processed <- df %>% mutate(id = row_number()) %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  mutate(lemma = lemmatize_words(word))
+  
+  df_bigrams <- df_processed %>%
+  filter(!is.na(lemma)) %>%
+  mutate(bigram = paste(lag(lemma), lemma, sep = "_")) %>%
+  filter(!is.na(bigram)) %>% select(c(id, bigram))
+  
+  df_tfidf <- df_bigrams %>% 
+  group_by(bigram, id) %>% summarise(count = n()) %>%
+  bind_tf_idf(term = "bigram", document = "id", n = "count")
+  
+  df_dtm <- cast_tdm(df_tfidf, bigram, id, tf_idf) %>% as.matrix() %>% t()
+  df_dtm <- df_dtm[order(as.numeric(rownames(df_dtm))),]
+  
+}
+
+
 ```
 
-## Dimensionality Reduction
-
-Very crude dimensionality reduction by dropping very infrequent words:
-```{r}
-us_sample_tfidf <- us_sample_tfidf[,colSums(us_sample_tfidf != 0)>1]
-```
-
-Dimensionality reduction with PCA:
-```{r}
-pca.us <- prcomp(us_sample_tfidf, scale = T)
-us_sample_tfidf <- pca.us$x[,1:100]
-```
 
 ## Getting the data ready for ML
 
 A function that performs train-test split:
-
 ```{r}
 ml_ready <- function (dtm, original_data) {
   
@@ -97,12 +133,9 @@ ml_ready <- function (dtm, original_data) {
 
   train_data <- dtm[group_index$train,]
   test_data <- dtm[group_index$test,]
-  
-  #Converting dependent var to numeric
-  original_data$senti_label_num <- ifelse(original_data$senti_label=="P", 1, -1)
 
-  train_label <- original_data$senti_label_num[group_index$train]
-  test_label <- original_data$senti_label_num[group_index$test]
+  train_label <- original_data$senti_label[group_index$train]
+  test_label <- original_data$senti_label[group_index$test]
   
   ml_list <- list("train_data" = train_data, "test_data" = test_data, 
                   "train_label" = train_label, "test_label" = test_label,
@@ -111,80 +144,251 @@ ml_ready <- function (dtm, original_data) {
 }
 ```
 
-Applying the function to US data:
+Creating an ensemble averaging function:
 ```{r}
 
-ml_us <- ml_ready(us_sample_tfidf, us_sample)
+ensemble_average <- function(df) {
+  
+  #scaling lexicon-based senti labels
+  df$afinn_sentiment <- scale(df$afinn_sentiment, center = TRUE, scale = TRUE)
+  df$bing_sentiment <- scale(df$bing_sentiment, center = TRUE, scale = TRUE)
+  
+  #converting svm and rf labels to numeric
+  df$svm.label <- ifelse(df$svm.label == "1", 1, -1) 
+  df$rf.label <- ifelse(df$rf.label == "1", 1, -1) 
+  
+  # Now, let's take the average of the top performing models: SVM, Lexicon-based (we will tentatively choose Bing Liu for now), and RF
+  df$hybrid <- (df$svm.label + df$bing_sentiment + df$rf.label)/3
+  # df$hybrid <- ifelse(df$hybrid > 0, 1, -1)
+  
+  return(df)
+}
 
-train_us <- ml_us$train_data
-test_us <- ml_us$test_data
-train_us_label <- ml_us$train_label
-test_us_label <- ml_us$test_label
-us_group <- ml_us$group_index
+
+```
+
+## Training the data
+
+Creating a training function:
+```{r}
+
+train_ml <- function(df) {
+  
+  df.dtm <- vectorizer_tfidf(df) #creating the document-term matrix
+  df.dtm <- df.dtm[,colSums(df.dtm != 0) > 3] #dimensionality reduction
+  
+  ml <- ml_ready(df.dtm, df)
+
+  train_data <- ml$train_data
+  test_data <- ml$test_data
+  train_label <- ml$train_label
+  test_label <- ml$test_label
+  group <- ml$group_index
+  
+  #Support Vector Machine
+  senti.svm <- svm(x=train_data, y=as.factor(train_label), 
+                   kernel = "linear", type = "C-classification")
+  senti.predict <- predict(senti.svm, test_data)
+
+  df.test <- df[group$test,] 
+  df.test$svm.label <- senti.predict
+  
+  #Random Forest
+  senti.randomforest <- randomForest(x=train_data, y=as.factor(train_label),
+                                   mtry=50, tree=35)
+  senti.predict <- predict(senti.randomforest, test_data)
+  df.test$rf.label <- senti.predict
+  
+  #Naive Bayes
+  # senti.nb <- naive_bayes(x=train_data, y = as.factor(train_label))
+  # senti.predict <- predict(senti.nb, test_data)
+  # df.test$nb.label <- senti.predict
+  
+  #DT
+  # senti.dt <- rpart(formula = as.factor(train_label) ~., data = as.data.frame(train_data))
+  # senti.predict <- predict(senti.dt, as.data.frame(test_data))
+  # df.test$dt.label <- ifelse(senti.predict[,1] < senti.predict[,2], 1,-1)
+  
+  #Lexicon & Hybrid
+  df.test <- get_senti(df.test) %>% ensemble_average()
+  
+  return(list("dtm" = df.dtm, "df" = df.test, 
+              "svm" = senti.svm, "randforest" = senti.randomforest))
+  
+}
+
+```
+
+Applying the training function to sampled US data:
+```{r}
+
+train_us <- train_ml(us_sample)
+us_sample_test <- train_us$df
+us_sample_dtm <- train_us$dtm
+us_svm <- train_us$svm
+us_randomforest <- train_us$randforest
+
+```
+
+### Model Performance Metrics:
+
+Confusion Matrix:
+```{r}
+us_hybrid <- ifelse(us_sample_test$hybrid > 0, 1, -1)
+confusionMatrix(table(us_hybrid, us_sample_test$senti_label), positive = "1")
+```
+
+ROC:
+```{r}
+ggplot(us_sample_test) + geom_roc(aes(d = senti_label, m = hybrid), color = "darkgreen") + 
+  geom_roc(aes(d = senti_label, m = afinn_sentiment), color = "red") + theme_minimal()
+```
+
+
+Applying the training function to sampled Chinese data:
+```{r}
+
+train_us <- train_ml(china_sample)
+china_sample_test <- train_china$df
+china_sample_dtm <- train_china$dtm
+china_svm <- train_china$svm
+china_randomforest <- train_china$randforest
+
+```
+
+Confusion Matrix:
+```{r}
+china_hybrid <- ifelse(china_sample_test$hybrid > 0, 1, -1)
+confusionMatrix(table(china_hybrid, china_sample_test$senti_label), positive = "1")
+```
+
+ROC:
+```{r}
+ggplot(china_sample_test) + geom_roc(aes(d = senti_label, m = hybrid), color = "darkgreen") + 
+  geom_roc(aes(d = senti_label, m = afinn_sentiment), color = "red") + theme_minimal()
+```
+
+
+## Applying ML to the actual dataset!
+
+Creating a function:
+```{r}
+
+apply_ml <- function(df, df.text, sample_dtm, svm, randforest) {
+  
+  df.text <- df.text[,colSums(df.text != 0) > 3] #dimensionality reduction
+  
+  #Making the test dtm's dimensions conform to the learned dtm 
+  common_cols <- intersect(colnames(df.text), colnames(sample_dtm))
+  df.text <- df.text[,common_cols]
+  
+  missing_cols <- setdiff(colnames(sample_dtm), colnames(df.text))
+  if (length(missing_cols) > 0) {
+    add_matrix <- matrix(0, nrow = nrow(df.text), ncol = length(missing_cols))
+    colnames(add_matrix) <- missing_cols
+    df.text <- cbind(df.text, add_matrix)
+  }
+    
+  order <- match(colnames(sample_dtm), colnames(df.text))
+  df.text <- df.text[,order]
+  
+  dat.svm <- predict(svm, df.text) #applying SVM
+  df$svm.label <- dat.svm
+  
+  dat.rf <- predict(randforest, df.text) #applying Random Forest
+  df$rf.label <- dat.rf
+  
+  df <- get_senti(df) #using lexicon-based methods
+
+  df <- ensemble_average(df)
+  
+  return(df)
+  
+}
+
+
+```
+
+Another useful function that subsets the data and then creates term document matrices to cut down on the computing power required:
+```{r}
+
+subset_dtm <- function (df, rows_kept) {
+  df <- df[sample(nrow(df), rows_kept),] # taking a sample to further reduce computational load
+  
+  # splitting the large dataframe into four more manageable chunks
+  n <- nrow(df)
+  split_indices <- c(0, round(n * 0.25), round(n * 0.5), round(n * 0.75), n)
+  
+  subset_df <- lapply(seq_along(split_indices)[-1], function(i) {
+  start <- split_indices[i-1] + 1
+  end <- split_indices[i]
+  df[start:end,]})
+  
+  df_dtm <- lapply(subset_df, vectorizer_tfidf) #creating dtms
+  
+  df_senti <- vector(mode = "list", length = 4)
+  for (k in 1:4) {
+    df_senti[[k]] <- apply_ml(subset_df[[k]], df_dtm[[k]], 
+                           china_sample_dtm, china_svm, china_randomforest)
+  }
+  
+  df_senti <- do.call(rbind, df_senti)
+  
+  return(df_senti)
+}
 
 ```
 
 
-## Naive Bayes
-
+### Applying the function to presidential data: 
 ```{r}
 
-us.nb <- naive_bayes(x=train_us, y = as.factor(train_us_label))
-us.predict <- predict(us.nb, test_us)
-
-us_sample_test <- us_sample[us_group$test,] 
-us_sample_test$nb.label <- us.predict
+# pres.text <- vectorizer_tfidf(pres)
+pres.senti <- apply_ml(pres, pres.text, us_sample_dtm, us_svm, us_randomforest)
 
 ```
 
-Creating a confusion matrix for NB:
+Checking out performance:
 ```{r}
-table(us_sample_test$nb.label, test_us_label)
+table(ifelse(pres.senti$hybrid > 0, 1, -1), ifelse(pres.senti$afinn_sentiment > 0, 1, -1))
+```
+Saving the udpated file:
+```{r}
+# write_xlsx(pres.senti.2, "Presidential_Library_Senti.xlsx")
 ```
 
-## SVM
-
+### Applying the function to congressional data: 
 ```{r}
 
-us.svm <- svm(x=train_us, y=as.factor(train_us_label), kernel = "linear")
-us.predict <- predict(us.svm, test_us)
+congress.senti <- congress[!is.na(congress$text),] %>% subset_dtm(rows_kept = 4800)
 
-# us_sample_test <- us_sample[us_group$test,] 
-us_sample_test$svm.label <- ifelse(us.predict == "1", 1, -1)
+```
+Checking out performance:
+```{r}
+table(ifelse(congress.senti$bing_sentiment > 0, 1, -1), ifelse(congress.senti$svm.label > 0, 1, -1))
+```
+## Applying the function to mofa data: 
+
+First, re-training the model with Chinese data:
+```{r}
+
+train_china <- train_ml(china_sample)
+china_sample_test <- train_china$df
+china_sample_dtm <- train_china$dtm
+china_svm <- train_china$svm
+china_randomforest <- train_china$randforest
+
+table(ifelse(china_sample_test$hybrid > 0, 1, -1), china_sample_test$senti_label)
 
 ```
 
-Creating a confusion matrix for SVM:
-```{r}
-table(us_sample_test$svm.label, test_us_label)
-```
-## Random Forest
-
+Then, applying the function to all MOFA data:
 ```{r}
 
-us.randomforest <- randomForest(x=train_us, y=as.factor(train_us_label),
-                                mtry=25, tree=25)
-us.predict <- predict(us.randomforest, test_us)
+mofa.senti <- mofa[!is.na(mofa$text),] %>% subset_dtm(rows_kept = 5955)
 
-us_sample_test$randforest.label <- us.predict
 ```
-
-Creating a confusion matrix for Random Forest:
 ```{r}
-table(us_sample_test$randforest.label, test_us_label)
+table(ifelse(mofa.senti$afinn_sentiment > 0, 1, -1), ifelse(mofa.senti$rf.label > 0, 1, -1))
 ```
-
-```{r}
-
-us.dt <- rpart(formula = as.factor(train_us_label) ~., data = as.data.frame(train_us))
-us.predict <- predict(us.dt, as.data.frame(test_us))
-
-us_sample_test$dt.label <- ifelse(us.predict[,1] < us.predict[,2], 1,-1)
-```
-
-Creating a confusion matrix for Random Forest:
-```{r}
-table(us_sample_test$dt.label, test_us_label)
-```
-
 

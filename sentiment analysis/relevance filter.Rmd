@@ -1,0 +1,134 @@
+---
+title: "relevance filter"
+author: "Alex Lin"
+date: "2023-03-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Filtering for relevant data:
+
+### Importing sample datasets:
+
+People's Daily Sample:
+```{r}
+
+pd_relevance <- read_excel("~/PycharmProjects/thesis/data/sample data/peoplesdaily_sample.xlsx")
+pd_relevance$text <- paste(pd_relevance$headline, pd_relevance$cleaned_text, sep = " ")
+pd_relevance <- pd_relevance[,c(5,9)]
+
+pd_relevance$relevance[is.na(pd_relevance$relevance)] <- "R"
+
+```
+
+Presidential Lib Sample:
+```{r}
+
+pres_relevance <- read_excel("~/PycharmProjects/thesis/data/sample data/pres_sample.xlsx")
+pres_relevance <- pres_relevance[,c(3,8)]
+colnames(pres_relevance) <- c("text","relevance")
+
+pres_relevance$relevance[is.na(pres_relevance$relevance)] <- "R"
+
+```
+
+## Training 
+
+Training function:
+```{r}
+
+train_rel_ml <- function(df) {
+  
+  df.dtm <- vectorizer_tfidf(df) #creating the document-term matrix
+  df.dtm <- df.dtm[,colSums(df.dtm != 0) > 1] #dimensionality reduction
+  
+  ml <- ml_ready(df.dtm, df)
+
+  train_data <- ml$train_data
+  test_data <- ml$test_data
+  train_label <- ml$train_label
+  test_label <- ml$test_label
+  group <- ml$group_index
+  
+  #Support Vector Machine
+  rel.svm <- svm(x=train_data, y=as.factor(train_label), 
+                   kernel = "linear", type = "C-classification")
+  rel.predict <- predict(rel.svm, test_data)
+
+  df.test <- df[group$test,] 
+  df.test$svm.label <- rel.predict
+  
+  # Random Forest
+  rel.randomforest <- randomForest(x=train_data, y=as.factor(train_label),
+                                     mtry=50, tree=35)
+  rel.predict <- predict(rel.randomforest, test_data)
+  df.test$rf.label <- rel.predict
+  
+  #Naive Bayes
+  # senti.nb <- naive_bayes(x=train_data, y = as.factor(train_label))
+  # senti.predict <- predict(senti.nb, test_data)
+  # df.test$nb.label <- senti.predict
+  
+  #DT
+  # senti.dt <- rpart(formula = as.factor(train_label) ~., data = as.data.frame(train_data))
+  # senti.predict <- predict(senti.dt, as.data.frame(test_data))
+  # df.test$dt.label <- ifelse(senti.predict[,1] < senti.predict[,2], 1,-1)
+  
+  #Lexicon & Hybrid
+  # df.test <- get_senti(df.test) %>% ensemble_average()
+  
+  return(list("dtm" = df.dtm, "df" = df.test, 
+              "svm" = rel.svm, "randforest" = rel.randomforest))
+  
+}
+
+```
+
+
+A function that performs train-test split for text and the relevance label:
+```{r}
+ml_ready <- function (dtm, original_data) {
+  
+  #Train-Test Split
+  group_index <- partition(original_data$relevance, p = c(train = 0.8, test = 0.2))
+
+  train_data <- dtm[group_index$train,]
+  test_data <- dtm[group_index$test,]
+
+  train_label <- original_data$relevance[group_index$train]
+  test_label <- original_data$relevance[group_index$test]
+  
+  ml_list <- list("train_data" = train_data, "test_data" = test_data, 
+                  "train_label" = train_label, "test_label" = test_label,
+                  "group_index" = group_index)
+  return(ml_list)
+}
+```
+
+
+Applying the function to People's Daily:
+```{r}
+
+pd_rel_ml <- train_rel_ml(pd_relevance)
+pd_rel_sample_test <- pd_rel_ml$df
+pd_rel_sample_dtm <- pd_rel_ml$dtm
+pd_rel_svm <- pd_rel_ml$svm
+pd_rel_randforest <- pd_rel_ml$randforest
+
+```
+
+
+Applying the function to President
+```{r}
+
+pres_rel_ml <- train_rel_ml(pres_relevance)
+pres_rel_sample_test <- pres_rel_ml$df
+pres_rel_sample_dtm <- pres_rel_ml$dtm
+pres_rel_svm <- pres_rel_ml$svm
+pres_rel_randforest <- pres_rel_ml$randforest
+
+```
+

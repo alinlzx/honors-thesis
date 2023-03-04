@@ -1,0 +1,139 @@
+---
+title: "Time Series Analysis"
+author: "Alex Lin"
+date: "2023-03-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Time Series Analysis
+
+Importing packges
+```{r}
+
+library(tseries)
+library(lmtest)
+
+```
+
+
+## Processing US data: 
+```{r}
+# us_data <- rbind(pres.senti, congress.senti[,c(2,1,3,5,4,6,7,8,9,10)]) %>% drop_na(date)
+us_data <- pres.senti %>% drop_na(date)
+```
+
+Creating a function that groups data by MONTH: 
+```{r}
+group_month <- function (df) {
+  
+  df$month <- format(df$date, "%Y-%m")
+  
+  df_month <- df %>%
+    group_by(month) %>%
+    summarise(mean_sentiment = mean(hybrid), doc_count = n())
+  
+  df_month$month <- as.Date(paste(df_month$month, "-01", sep = ""))
+  
+  return (df_month)
+}
+
+```
+
+Creating a function that groups data by WEEK: 
+```{r}
+group_week <- function (df) {
+    df$week <- difftime(df$date, as.Date("2000-01-01"), units = "weeks") %>%
+    as.numeric() %>%
+    floor()
+  
+    df_week <- df %>%
+      group_by(week) %>%
+      summarise(mean_sentiment = mean(hybrid), doc_count = n())
+  
+    df_week$week <- as.Date("2000-01-01") + df_week$week * 7
+    
+    return(df_week)
+}
+```
+
+
+Applying to US data: 
+```{r}
+us_month <- group_month(us_data)
+us_week <- group_week(us_data)
+```
+
+## Processing Chinese data: 
+```{r}
+mofa_month <- mofa.senti[!is.na(mofa.senti$date),] %>% group_month()
+mofa_week <- mofa.senti[!is.na(mofa.senti$date),] %>% group_week()
+```
+
+## Plotting the Time Series
+```{r}
+
+ggplot() + geom_line(data = mofa_week, aes(x = week, y = mean_sentiment), color = "red", alpha = 0.1) +
+  geom_ma(data = mofa_week, aes(x = week, y = mean_sentiment), color = "red", ma_fun = SMA) + 
+  geom_line(data = us_week, aes(x = week, y = mean_sentiment), color = "darkblue", alpha = 0.1) +
+  geom_ma(data = us_week, aes(x = week, y = mean_sentiment), color = "blue", ma_fun = SMA) + 
+  xlab("date") + ylab("mean sentiment") + 
+  theme_minimal()
+
+```
+
+## Granger Causality Assumptions
+
+Checking whether US data is stationary with Dickey-Fuller
+```{r}
+adf.test(us_month$mean_sentiment)
+```
+Checking whether China data is stationary with Dickey-Fuller
+```{r}
+adf.test(mofa_month$mean_sentiment)
+```
+
+Because the MoFA data is not stationary, we will use first-order differencing to stabilize the mean: 
+```{r}
+mofa_month_diff <- diff(mofa_month$mean_sentiment)
+us_month_diff <- diff(us_month$mean_sentiment)
+```
+
+Creating new master dataset with stationary data from both US and China: 
+```{r}
+
+mofa_month_2 <- mofa_month[-1,]
+mofa_month_2$senti_diff <- mofa_month_diff
+
+us_month_2 <- us_month[-1,]
+us_month_2$senti_diff <- us_month_diff
+
+time_series <- left_join(mofa_month_2, us_month_2, by = "month")
+colnames(time_series) <- c("date","senti_china","ndoc_china","sentidiff_china",
+                            "senti_us","ndoc_us","sentidiff_us")
+
+```
+
+Plotting first-order differences: 
+```{r}
+
+ggplot(time_series) + geom_line(aes(x = date, y = sentidiff_china), color = "red") +
+  geom_line(aes(x = date, y = sentidiff_us), color = "darkblue") +
+  xlim(as.Date(c('2019-01-01', '2022-01-01')))
+
+```
+
+## Performing Granger Causality!!
+
+```{r}
+
+gct <- grangertest(sentidiff_us ~ sentidiff_china, order = 1, 
+                   data = time_series)
+gct
+
+```
+
+
