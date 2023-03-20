@@ -22,11 +22,13 @@ library(caret)
 library(quanteda)
 library(stringr)
 library(plotROC)
+library(rsample)
 
 library(naivebayes)
 library(e1071)
 library(randomForest)
 library(rpart)
+library(pROC)
 
 ```
 
@@ -36,11 +38,11 @@ library(rpart)
 For US:
 ```{r}
 
-congress_sample <- congress_sample[,c("date", "title", "text", "senti_label")]
-pres_sample <- pres_sample[,c("date", "title", "text", "senti_label")]
+congress_sample <- congress_sample[,c("date", "title", "text", "pos_label", "neg_label")]
+pres_sample <- pres_sample[!is.na(pres_sample$pos_label),c("date", "title", "text", "pos_label", "neg_label")]
 
-us_sample <- rbind(pres_sample, congress_sample) %>% drop_na(senti_label) 
-us_sample$senti_label <-   ifelse(us_sample$senti_label=="P", 1, -1) 
+us_sample <- rbind(pres_sample, congress_sample) #%>% drop_na(senti_label) 
+# us_sample$senti_label <-   ifelse(us_sample$senti_label=="P", 1, -1) 
 
 ```
 
@@ -51,6 +53,8 @@ peoplesdaily_sample <- filter(peoplesdaily_sample, grepl("US",cleaned_text))
 peoplesdaily_sample <- peoplesdaily_sample[,c("date", "headline", "cleaned_text", "senti_label", "...8")]
 colnames(peoplesdaily_sample) <- c("date","title","text","senti_label","relevance")
 
+peoplesdaily_sample <- peoplesdaily_sample %>% subset(is.na(relevance))
+
 ```
 
 ```{r}
@@ -58,7 +62,7 @@ colnames(peoplesdaily_sample) <- c("date","title","text","senti_label","relevanc
 mofa_sample <- mofa_sample[,c("date","a_loc","cleaned_text","senti_label")]
 colnames(mofa_sample) <- c("date", "title", "text", "senti_label")
 
-china_sample <- rbind(mofa_sample, peoplesdaily_sample[,1:4]) %>% drop_na(senti_label)
+# china_sample <- rbind(mofa_sample, peoplesdaily_sample[,1:4]) %>% drop_na(senti_label)
 
 ```
 
@@ -126,23 +130,66 @@ vectorizer_tfidf_bigram <- function (df) {
 
 A function that performs train-test split:
 ```{r}
-ml_ready <- function (dtm, original_data) {
+prepare_ml <- function (dtm, original_data) {
+  
+  original_data$index <- as.numeric(rownames(original_data))
+  data_p <- original_data[original_data$senti_label == "P",]
+  data_n <- original_data[original_data$senti_label == "N",]
+  data_o <- original_data[original_data$senti_label == "O",]
   
   #Train-Test Split
-  group_index <- partition(original_data$senti_label, p = c(train = 0.8, test = 0.2))
+  group_index_p <- partition(data_p$senti_label, p = c(train = 0.8, test = 0.2))
+  group_index_n <- partition(data_n$senti_label, p = c(train = 0.8, test = 0.2))
+  group_index_o <- partition(data_o$senti_label, p = c(train = 0.8, test = 0.2))
 
-  train_data <- dtm[group_index$train,]
-  test_data <- dtm[group_index$test,]
+  test_df <- rbind(data_p[group_index_p$test,], data_o[group_index_o$test,], data_n[group_index_n$test,])
+  test_index <- test_df$index
 
-  train_label <- original_data$senti_label[group_index$train]
-  test_label <- original_data$senti_label[group_index$test]
+  train_data <- dtm[-test_index,]
+  test_data <- dtm[test_index,]
+
+  train_label <- original_data$senti_label[-test_index]
+  test_label <- original_data$senti_label[test_index]
+  
+  # test_df <- original_data[group_index$test,]
   
   ml_list <- list("train_data" = train_data, "test_data" = test_data, 
                   "train_label" = train_label, "test_label" = test_label,
-                  "group_index" = group_index)
+                  "test_df" = test_df)
+  return(ml_list)
+  
+}
+```
+
+
+```{r}
+prepare_ml <- function (dtm, original_data) {
+  
+  #Stratifying the data by labels
+  group_index <- partition(original_data$pos_label, p = c(train = 0.8, test = 0.2))
+
+  #Creating train and test data
+  train_data <- dtm[group_index$train,]
+  test_data <- dtm[group_index$test,]
+  
+  #Creating test and train labels
+  train_pos_label <- original_data$pos_label[group_index$train]
+  test_pos_label <- original_data$pos_label[group_index$test]
+  
+  train_neg_label <- original_data$neg_label[group_index$train]
+  test_neg_label <- original_data$neg_label[group_index$test]
+  
+  test_df <- original_data[group_index$test,]
+  
+  ml_list <- list("train_data" = train_data, "test_data" = test_data, 
+                  "train_pos_label" = train_pos_label, "test_pos_label" = test_pos_label,
+                  "train_neg_label" = train_neg_label, "test_neg_label" = test_neg_label,
+                  "test_df" = test_df)
   return(ml_list)
 }
 ```
+
+
 
 Creating an ensemble averaging function:
 ```{r}
@@ -154,11 +201,11 @@ ensemble_average <- function(df) {
   df$bing_sentiment <- scale(df$bing_sentiment, center = TRUE, scale = TRUE)
   
   #converting svm and rf labels to numeric
-  df$svm.label <- ifelse(df$svm.label == "1", 1, -1) 
-  df$rf.label <- ifelse(df$rf.label == "1", 1, -1) 
+  df$svm.label <- ifelse(df$svm.label == "P", 1, ifelse(df$svm.label == "N", -1, 0)) 
+  df$rf.label <- ifelse(df$rf.label == "P", 1, ifelse(df$rf.label == "N", -1, 0)) 
   
   # Now, let's take the average of the top performing models: SVM, Lexicon-based (we will tentatively choose Bing Liu for now), and RF
-  df$hybrid <- (df$svm.label + df$bing_sentiment + df$rf.label)/3
+  df$hybrid <- (df$svm.label + df$rf.label + df$bing_sentiment)/3
   # df$hybrid <- ifelse(df$hybrid > 0, 1, -1)
   
   return(df)
@@ -169,35 +216,47 @@ ensemble_average <- function(df) {
 
 ## Training the data
 
-Creating a training function:
+Creating a training function for double-coded data:
 ```{r}
 
-train_ml <- function(df) {
+train_ml <- function(df_complete) {
   
+  df <- subset(df_complete, pos_label == 'P' | neg_label == 'N')
   df.dtm <- vectorizer_tfidf(df) #creating the document-term matrix
   df.dtm <- df.dtm[,colSums(df.dtm != 0) > 3] #dimensionality reduction
   
-  ml <- ml_ready(df.dtm, df)
+  ml <- prepare_ml(df.dtm, df)
 
   train_data <- ml$train_data
   test_data <- ml$test_data
-  train_label <- ml$train_label
-  test_label <- ml$test_label
-  group <- ml$group_index
+  
+  train_pos_label <- ml$train_pos_label
+  test_pos_label <- ml$test_pos_label
+  
+  train_neg_label <- ml$train_neg_label
+  test_neg_label <- ml$test_neg_label
   
   #Support Vector Machine
-  senti.svm <- svm(x=train_data, y=as.factor(train_label), 
+  pos.svm <- svm(x=train_data, y=as.factor(train_pos_label), 
                    kernel = "linear", type = "C-classification")
-  senti.predict <- predict(senti.svm, test_data)
-
-  df.test <- df[group$test,] 
-  df.test$svm.label <- senti.predict
+  pos.predict <- predict(pos.svm, test_data)
+  pos.predict <- ifelse(pos.predict == "P", 1, 0)
+  
+  neg.svm <- svm(x=train_data, y=as.factor(train_neg_label),
+                 kernel = "linear", type = "C-classification")
+  neg.predict <- predict(neg.svm, test_data)
+  neg.predict <- ifelse(neg.predict == "N", -1, 0)
+  
+  df.test <- ml$test_df
+  df.test$pos.predict <- pos.predict
+  df.test$neg.predict <- neg.predict
+  df.test$svm.label <- pos.predict + neg.predict
   
   #Random Forest
-  senti.randomforest <- randomForest(x=train_data, y=as.factor(train_label),
-                                   mtry=50, tree=35)
-  senti.predict <- predict(senti.randomforest, test_data)
-  df.test$rf.label <- senti.predict
+  # senti.randomforest <- randomForest(x=train_data, y=as.factor(train_label),
+                                   # mtry=50, tree=35)
+  # senti.predict <- predict(senti.randomforest, test_data)
+  # df.test$rf.label <- senti.predict
   
   #Naive Bayes
   # senti.nb <- naive_bayes(x=train_data, y = as.factor(train_label))
@@ -210,9 +269,67 @@ train_ml <- function(df) {
   # df.test$dt.label <- ifelse(senti.predict[,1] < senti.predict[,2], 1,-1)
   
   #Lexicon & Hybrid
+  # df.test <- get_senti(df.test) %>% ensemble_average()
+  
+  return(list("dtm" = df.dtm, "df.test" = df.test,
+              "pos.svm" = pos.svm, "neg.svm" = neg.svm))
+              # "svm" = senti.svm, "randforest" = senti.randomforest))
+  
+}
+
+```
+
+Creating a training function:
+```{r}
+
+train_ml <- function(df) {
+  
+  df$senti_label <- ifelse(df$pos_label=='NP'&df$neg_label=='NN', 'O',
+                           ifelse(df$pos_label=='P', 'P', 'N'))
+  
+  # df <- subset(df, senti_label != 'O')
+  
+  df.dtm <- vectorizer_tfidf(df) #creating the document-term matrix
+  df.dtm <- df.dtm[,colSums(df.dtm != 0) > 3] #dimensionality reduction
+  
+  ml <- prepare_ml(df.dtm, df)
+
+  train_data <- ml$train_data
+  test_data <- ml$test_data
+  
+  train_label <- ml$train_label
+  test_label <- ml$test_label
+  
+  # Support Vector Machine
+  senti.svm <- svm(x=train_data, y=as.factor(train_label), 
+                   kernel = "linear", type = "C-classification")
+  svm.predict <- predict(senti.svm, test_data)
+  # svm.predict <- ifelse(svm.predict == "P", 1, 0)
+  
+  df.test <- ml$test_df
+  df.test$svm.label <- svm.predict
+  
+  # Random Forest
+  senti.randomforest <- randomForest(x=train_data, y=as.factor(train_label),
+                                     mtry=50, tree=35)
+  randomforest.predict <- predict(senti.randomforest, test_data)
+  df.test$rf.label <- randomforest.predict
+  
+  #Naive Bayes
+  # senti.nb <- naive_bayes(x=train_data, y = as.factor(train_label))
+  # senti.predict <- predict(senti.nb, test_data)
+  # df.test$nb.label <- senti.predict
+  
+  #DT
+  # senti.dt <- rpart(formula = as.factor(train_label) ~., data = as.data.frame(train_data))
+  # senti.predict <- predict(senti.dt, as.data.frame(test_data))
+  # df.test$dt.label <- ifelse(senti.predict[,1] < senti.predict[,2], 1,-1)
+  
+  # Lexicon & Hybrid
   df.test <- get_senti(df.test) %>% ensemble_average()
   
-  return(list("dtm" = df.dtm, "df" = df.test, 
+  return(list("dtm" = df.dtm, "df.test" = df.test,
+              #"pos.svm" = pos.svm, "neg.svm" = neg.svm))
               "svm" = senti.svm, "randforest" = senti.randomforest))
   
 }
@@ -223,9 +340,10 @@ Applying the training function to sampled US data:
 ```{r}
 
 train_us <- train_ml(us_sample)
-us_sample_test <- train_us$df
+us_test <- train_us$df.test
 us_sample_dtm <- train_us$dtm
-us_svm <- train_us$svm
+us_svm <- train_us$pos.svm
+# us_neg_svm <- train_us$neg.svm
 us_randomforest <- train_us$randforest
 
 ```
@@ -234,21 +352,37 @@ us_randomforest <- train_us$randforest
 
 Confusion Matrix:
 ```{r}
-us_hybrid <- ifelse(us_sample_test$hybrid > 0, 1, -1)
-confusionMatrix(table(us_hybrid, us_sample_test$senti_label), positive = "1")
+# us_hybrid <- ifelse(us_test$hybrid > 0, "P", "N")
+us_test <- us_test %>% arrange(hybrid)
+us_hybrid <- cut(us_test$hybrid, breaks = c(-Inf, quantile(us_test$hybrid, probs = 0.3), quantile(us_test$hybrid, probs = 0.8), Inf), labels = c("N","O","P"))
+confusionMatrix(table(us_hybrid, us_test$senti_label), positive = "P")
 ```
 
 ROC:
 ```{r}
 ggplot(us_sample_test) + geom_roc(aes(d = senti_label, m = hybrid), color = "darkgreen") + 
   geom_roc(aes(d = senti_label, m = afinn_sentiment), color = "red") + theme_minimal()
+
+# us_senti_label <- ifelse(us_test$senti_label == "P", 1, ifelse(us_test$senti_label == "O", 0, -1))
+# us_hybrid <- cbind(1 - us_test$hybrid, us_test$hybrid)[, us_senti_label]
+
+#multi-class ROC:
+roc_p <- roc(ifelse(us_test$senti_label == "P", 1, 0), us_test$hybrid)
+roc_n <- roc(ifelse(us_test$senti_label == "N", 1, 0), us_test$hybrid)
+roc_a <- roc(ifelse(us_test$senti_label == "O", 1, 0), us_test$hybrid)
+
+plot(roc_p, print.auc=TRUE, col="green", legacy.axes=TRUE, legacy.layout=TRUE)
+lines(roc_n, col="blue")
+lines(roc_a, col="orange")
+legend("bottomright", legend=c("Positive", "Negative", "Ambiguous"), col=c("red", "blue", "orange"), lty=1)
+
 ```
 
 
 Applying the training function to sampled Chinese data:
 ```{r}
 
-train_us <- train_ml(china_sample)
+train_china <- train_ml(china_sample)
 china_sample_test <- train_china$df
 china_sample_dtm <- train_china$dtm
 china_svm <- train_china$svm
@@ -352,7 +486,7 @@ Checking out performance:
 ```{r}
 table(ifelse(pres.senti$hybrid > 0, 1, -1), ifelse(pres.senti$afinn_sentiment > 0, 1, -1))
 ```
-Saving the udpated file:
+Saving the labeled file:
 ```{r}
 # write_xlsx(pres.senti.2, "Presidential_Library_Senti.xlsx")
 ```
@@ -367,6 +501,12 @@ Checking out performance:
 ```{r}
 table(ifelse(congress.senti$bing_sentiment > 0, 1, -1), ifelse(congress.senti$svm.label > 0, 1, -1))
 ```
+Saving the labeled file: 
+```{r}
+write_xlsx(congress.senti, "Congress_Senti.xlsx")
+```
+
+
 ## Applying the function to mofa data: 
 
 First, re-training the model with Chinese data:
@@ -382,13 +522,22 @@ table(ifelse(china_sample_test$hybrid > 0, 1, -1), china_sample_test$senti_label
 
 ```
 
-Then, applying the function to all MOFA data:
+Then, applying the function to all MOFA and People's Daily data:
 ```{r}
 
-mofa.senti <- mofa[!is.na(mofa$text),] %>% subset_dtm(rows_kept = 5955)
+# mofa.senti <- mofa[!is.na(mofa$text),] %>% subset_dtm(rows_kept = 5955)
+peoplesdaily.senti <- subset_dtm(peoplesdaily[peoplesdaily$relevance.label == "R",], 
+                                 rows_kept = nrow(peoplesdaily[peoplesdaily$relevance.label == "R",]))
 
 ```
+
 ```{r}
 table(ifelse(mofa.senti$afinn_sentiment > 0, 1, -1), ifelse(mofa.senti$rf.label > 0, 1, -1))
+```
+
+Saving the labeled files:
+```{r}
+write_xlsx(mofa.senti, "MOFA_Senti.xlsx")
+write_xlsx(peoplesdaily.senti, "PeoplesDaily_Senti.xlsx")
 ```
 
