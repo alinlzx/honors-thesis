@@ -1,0 +1,279 @@
+---
+title: "sentiment analysis"
+author: "Alex Lin"
+date: "2/5/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Importing packages & data
+
+```{r}
+
+library(tidyverse)
+library(readxl)
+library(readxl)
+library(dplyr)
+library(syuzhet)
+library(ggplot2)
+library(tidyquant)
+library(lubridate)
+
+```
+
+Importing US data
+```{r}
+
+cong1 <- read_excel("~/PycharmProjects/thesis/data/Congress1.xlsx")
+cong2 <- read_excel("~/PycharmProjects/thesis/data/Congress2.xlsx")
+pres <- read_excel("~/PycharmProjects/thesis/data/Presidential_Library.xlsx")[,-1]
+
+```
+
+Importing China data
+```{r}
+all_mofa <- read_excel("~/PycharmProjects/thesis/data/raw_and_retired_data/CMFA_PressCon_v2.xlsx") %>% select(c(date, answer))
+colnames(all_mofa) <- c("date", "text")
+
+all_peoplesdaily <- read_excel("~/PycharmProjects/thesis/data/raw_and_retired_data/PeoplesDailyData.xlsx") %>% 
+  select(c(article_date, article_text))
+colnames(all_peoplesdaily) <- c("date", "text")
+
+```
+
+Importing China data mentioning US
+```{r}
+
+mofa <- read_excel("~/PycharmProjects/thesis/data/MFA_US.xlsx")[,-c(1:5)]
+names(mofa)[names(mofa)=="cleaned_text"] <- "text"
+
+peoplesdaily <- read_excel("~/PycharmProjects/thesis/data/PeoplesDailyUSA.xlsx")[,-c(1:3)]
+colnames(peoplesdaily) <- c("title","date", "orig_text","text")
+
+```
+
+## Data Cleaning
+
+#### Processing US Congress Data
+
+```{r}
+
+congress <- rbind(cong1, cong2) 
+congress <- congress[order(congress$Timestamp),]
+colnames(congress) <- c("date","title","orig_text","subhead","text")
+
+congress <- congress[!is.na(congress$text),]
+
+```
+
+#### Processing US Pres Data
+
+```{r}
+
+colnames(pres) <- c("title","date","orig_text","text","subhead")
+
+pres <- pres[!is.na(pres$text),]
+
+```
+
+## EDA
+
+### US Data
+
+Visualizing frequency of US docs over time
+```{r}
+us_palette <- c("#eb3498", "#e534eb","#ba34eb", "#9634eb","#34b1eb", "#3489eb")
+ggplot(us_data, aes(x = date, fill = source)) + geom_histogram(bins = 100) + scale_fill_manual(values = us_palette) + theme_minimal() + ylab("document frequency") + theme(legend.position = "bottom")  
+```
+
+
+### China Data
+```{r}
+all_mofa$source <- ifelse(grepl("US|U.S.|United States", all_mofa$text), "MFA Press Corpus", "Other")
+all_peoplesdaily$source <- ifelse(grepl("US|U.S.|United States", all_peoplesdaily$text), "People's Daily", "Other")
+
+# Because some PD data is not relevant, and we don't want to run the filter again, this is just a way to relabel the PD data to roughly mirror the R/NR make-up
+mentions_us_count <- nrow(all_peoplesdaily[all_peoplesdaily$source == "People's Daily",])
+all_peoplesdaily <- arrange(all_peoplesdaily, desc(source))
+all_peoplesdaily[sample(1:mentions_us_count, 0.5 * mentions_us_count),"source"] <- as.factor("Other")
+
+all_ch_dat <- rbind(all_mofa, all_peoplesdaily[sample(nrow(all_peoplesdaily), 15000),])
+all_ch_dat$source <- relevel(as.factor(all_ch_dat$source), "Other")
+```
+
+```{r}
+ch_palette <- c("darkgrey", "red", "orange")
+ggplot(all_ch_dat, aes(x = date, fill = source)) + geom_histogram(bins = 100) + scale_fill_manual(values = ch_palette) + theme_minimal() + ylab("document frequency") + theme(legend.position = "bottom")  
+```
+
+### Relevant US & China Data
+```{r}
+all_data <- rbind(select(us_data, c(date, text, source)), all_ch_dat[all_ch_dat$source != "Other",])
+all_data$source[grepl("Congress|CRS", all_data$source)] <- "US: Congressional Data"
+all_data$source[grepl("President", all_data$source)] <- "US: Presidential Library Data"
+
+all_data$source[grepl("MFA", all_data$source)] <- "China: MFA Data"
+all_data$source[grepl("People's Daily", all_data$source)] <- "China: People's Daily Data"
+
+ggplot(all_data, aes(x = date, fill = source)) + geom_histogram(bins = 100) + theme_minimal() + 
+  theme(legend.position = "bottom") + ylab("Document Frequency") + 
+  scale_fill_manual(values = c("red", "orange", "purple", "blue"))
+```
+
+
+
+## Sentiment Analysis
+
+### Congress Data
+
+#### Sentiment Analysis Function
+
+```{r}
+
+get_senti <- function(df) {
+  
+  df <- df %>% mutate(afinn_sentiment = get_sentiment(text, method = "afinn"),
+                   bing_sentiment = get_sentiment(text, method = "bing"))
+  
+  return(df)
+  
+}
+
+```
+
+#### Applying the Function
+
+```{r}
+
+congress_sentiments <- get_senti(congress)
+
+```
+
+### Visualizing Sentiments
+
+```{r}
+
+ggplot(congress_sentiments) + geom_ma(aes(x = date, y = afinn_sentiment), ma_fun = SMA, n = 300, na.rm = T) + 
+  geom_ma(aes(x = date, y = afinn_sentiment), ma_fun = SMA, n = 3000, na.rm = T, color = "red") + theme_minimal()
+
+```
+
+Grouping by WEEK:
+
+```{r}
+
+# congress_sentiments$date <- as.Date(congress_sentiments$date)
+
+congress_sentiments$week <- difftime(congress_sentiments$date, as.Date("2000-01-01"), units = "weeks") %>%
+  as.numeric() %>%
+  floor()
+
+```
+
+```{r}
+
+congress_sentiments_week <- congress_sentiments %>%
+  group_by(week) %>%
+  summarise(afinn_sentiment = mean(afinn_sentiment), bing_sentiment = mean(bing_sentiment),
+            doc_count = n())
+
+congress_sentiments_week$week <- as.Date("2000-01-01") + congress_sentiments_week$week * 7
+
+```
+
+Now visualizing ma by WEEK (blue) and approximate MONTH (red)
+
+```{r}
+
+ggplot(congress_sentiments_week) + geom_line(aes(x = week, y = afinn_sentiment), color = "blue", alpha = 0.5) + 
+  geom_ma(aes(x = week, y = afinn_sentiment), ma_fun = SMA, n = 52, na.rm = T, color = "red") + theme_minimal()
+
+```
+
+### Presidential Library Data
+
+#### Applying senti analysis function:
+
+```{r}
+
+pres_sentiments <- get_senti(pres)
+
+```
+
+#### Grouping pres documents by MONTH: 
+
+```{r}
+
+pres_sentiments$month <- format(pres_sentiments$date, "%Y-%m")
+
+```
+
+Applying a group_by function: 
+
+```{r}
+
+pres_sentiments_month <- pres_sentiments %>%
+  group_by(month) %>%
+  summarise(afinn_sentiment = mean(afinn_sentiment), bing_sentiment = mean(bing_sentiment),
+            doc_count = n())
+
+pres_sentiments_month$month <- as.Date(paste(pres_sentiments_month$month, "-01", sep = ""))
+
+```
+
+#### Visualizing sentiments:
+
+```{r}
+
+ggplot(pres_sentiments_month) + geom_line(aes(x = month, y = afinn_sentiment), color = "blue", alpha = 0.5) + 
+  geom_ma(aes(x = month, y = afinn_sentiment), ma_fun = SMA, n = 12, na.rm = T, color = "red") + theme_minimal()
+
+
+```
+
+
+```{r}
+
+ggplot() + # geom_ma(data = pres_sentiments_month, aes(x = month, y = afinn_sentiment), ma_fun = SMA, n = 12, na.rm = T, color = "blue") + 
+  geom_ma(data = pres_sentiments_month, aes(x = month, y = bing_sentiment), ma_fun = SMA, n = 12, na.rm = T, color = "purple") + 
+  # geom_ma(data = congress_sentiments_week,aes(x = week, y = afinn_sentiment), ma_fun = SMA, n = 52, na.rm = T, color = "red") + 
+  geom_ma(data = congress_sentiments_week,aes(x = week, y = bing_sentiment), ma_fun = SMA, n = 52, na.rm = T, color = "orange") + theme_minimal()
+
+```
+
+## Sentiment analysis w/ ML 
+
+### Data Viz
+
+```{r}
+ggplot() + 
+  geom_smooth(data = china_week, aes(x = week, y = mean_sentiment), color = "red", method = "loess", span = 0.08, se = F, linewidth = 0.5) + 
+  geom_smooth(data = china_week, aes(x = week, y = mean_sentiment), color = "red", method = "loess", span = 0.3, se = F, linetype = 2) +
+  geom_smooth(data = us_week, aes(x = week, y = mean_sentiment), color = "blue", method = "loess", span = 0.08, se = F, linewidth = 0.5) + 
+   geom_smooth(data = us_week, aes(x = week, y = mean_sentiment), color = "blue", method = "loess", span = 0.2, se = F, linetype = 2) + 
+  # geom_smooth(data = congress_week, aes(x = week, y = mean_sentiment), color = "purple", method = "loess", span = 0.1, se = F) + 
+  xlab("date") + ylab("mean sentiment") + #xlim(as.Date(c("2017-01-01", "2023-01-01")))
+  theme_minimal()
+```
+```{r}
+ggplot() + 
+  geom_smooth(data = mofa_week_2, aes(x = week, y = mean_sentiment), color = "red", method = "loess", span = 0.08, se = F, linewidth = 0.5) + 
+  geom_smooth(data = peoplesdaily_week, aes(x = week, y = mean_sentiment), color = "orange", method = "loess", span = 0.08, se = F, linewidth = 0.5) +
+  geom_smooth(data = pres_week_2, aes(x = week, y = mean_sentiment), color = "blue", method = "loess", span = 0.08, se = F, linewidth = 0.5) + 
+   geom_smooth(data = congress_week, aes(x = week, y = mean_sentiment), color = "purple", method = "loess", span = 0.08, se = F, linewidth = 0.5) + 
+  # geom_smooth(data = congress_week, aes(x = week, y = mean_sentiment), color = "purple", method = "loess", span = 0.1, se = F) + 
+  xlab("date") + ylab("mean sentiment") + # + xlim(as.Date(c("2017-01-01", "2019-01-01")))
+  theme_minimal() + geom_vline(xintercept = as.Date("2014-10-01")) 
+
+# +
+  # geom_vline(xintercept = as.Date("2005-03-20")) +
+  # geom_vline(xintercept = as.Date("2008-01-1")) +
+  # geom_vline(xintercept = as.Date("2011-5-01")) + 
+  # geom_vline(xintercept = as.Date("2012-11-01")) + 
+  # geom_vline(xintercept = as.Date("2016-07-01")) + 
+  # geom_vline(xintercept = as.Date("2017-11-09")) 
+```
+

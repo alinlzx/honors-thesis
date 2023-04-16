@@ -50,8 +50,8 @@ For China
 ```{r}
 
 peoplesdaily_sample <- filter(peoplesdaily_sample, grepl("US",cleaned_text))
-peoplesdaily_sample <- peoplesdaily_sample[,c("date", "headline", "cleaned_text", "senti_label", "...8")]
-colnames(peoplesdaily_sample) <- c("date","title","text","senti_label","relevance")
+peoplesdaily_sample <- peoplesdaily_sample[,c("date", "headline", "cleaned_text", "pos_label", "neg_label", "relevance")]
+colnames(peoplesdaily_sample) <- c("date","title","text","pos_label","neg_label","relevance")
 
 peoplesdaily_sample <- peoplesdaily_sample %>% subset(is.na(relevance))
 
@@ -59,10 +59,10 @@ peoplesdaily_sample <- peoplesdaily_sample %>% subset(is.na(relevance))
 
 ```{r}
 
-mofa_sample <- mofa_sample[,c("date","a_loc","cleaned_text","senti_label")]
-colnames(mofa_sample) <- c("date", "title", "text", "senti_label")
+mofa_sample <- mofa_sample[,c("date","a_loc","cleaned_text","pos_label", "neg_label")]
+colnames(mofa_sample) <- c("date", "title", "text", "pos_label", "neg_label")
 
-# china_sample <- rbind(mofa_sample, peoplesdaily_sample[,1:4]) %>% drop_na(senti_label)
+china_sample <- rbind(mofa_sample, peoplesdaily_sample[,1:5]) # %>% drop_na(senti_label)
 
 ```
 
@@ -132,24 +132,27 @@ A function that performs train-test split:
 ```{r}
 prepare_ml <- function (dtm, original_data) {
   
-  original_data$index <- as.numeric(rownames(original_data))
-  data_p <- original_data[original_data$senti_label == "P",]
-  data_n <- original_data[original_data$senti_label == "N",]
-  data_o <- original_data[original_data$senti_label == "O",]
+  # original_data$index <- as.numeric(rownames(original_data))
   
-  #Train-Test Split
-  group_index_p <- partition(data_p$senti_label, p = c(train = 0.8, test = 0.2))
-  group_index_n <- partition(data_n$senti_label, p = c(train = 0.8, test = 0.2))
-  group_index_o <- partition(data_o$senti_label, p = c(train = 0.8, test = 0.2))
+  # Train-Test Split Indices
+  # group_index_p <- partition(data_p$senti_label, p = c(train = 0.8, test = 0.2))
+  # group_index_n <- partition(data_n$senti_label, p = c(train = 0.8, test = 0.2))
+  group_index <- partition(original_data$senti_label, p = c(train = 0.8, test = 0.2))
 
-  test_df <- rbind(data_p[group_index_p$test,], data_o[group_index_o$test,], data_n[group_index_n$test,])
-  test_index <- test_df$index
+  # test_df <- rbind(data_p[group_index_p$test,], data_o[group_index_o$test,], data_n[group_index_n$test,])
+  test_df <- original_data[group_index$test,]
+  # test_index <- test_df$index
 
-  train_data <- dtm[-test_index,]
-  test_data <- dtm[test_index,]
-
-  train_label <- original_data$senti_label[-test_index]
-  test_label <- original_data$senti_label[test_index]
+  # Train-Test Split DTM
+  train_data <- dtm[group_index$train,]
+  test_data <- dtm[group_index$test,]
+  
+  # Train-Test Split Response / Labels
+  train_label <- original_data$senti_label[group_index$train]
+  test_label <- original_data$senti_label[group_index$test]
+  
+  # train_label <- cbind(original_data$pos_label[group_index$train], original_data$neg_label[group_index$train])
+  # test_label <- cbind(original_data$pos_label[group_index$test], original_data$neg_label[group_index$test])
   
   # test_df <- original_data[group_index$test,]
   
@@ -205,7 +208,7 @@ ensemble_average <- function(df) {
   df$rf.label <- ifelse(df$rf.label == "P", 1, ifelse(df$rf.label == "N", -1, 0)) 
   
   # Now, let's take the average of the top performing models: SVM, Lexicon-based (we will tentatively choose Bing Liu for now), and RF
-  df$hybrid <- (df$svm.label + df$rf.label + df$bing_sentiment)/3
+  df$hybrid <- (df$svm.label + df$bing_sentiment + df$rf.label)/3
   # df$hybrid <- ifelse(df$hybrid > 0, 1, -1)
   
   return(df)
@@ -219,62 +222,76 @@ ensemble_average <- function(df) {
 Creating a training function for double-coded data:
 ```{r}
 
-train_ml <- function(df_complete) {
+train_ml <- function(df) {
   
-  df <- subset(df_complete, pos_label == 'P' | neg_label == 'N')
+  df$senti_label <- ifelse(df$pos_label=='NP'&df$neg_label=='NN', 'O',
+                           ifelse(df$pos_label=='P', 'P', 'N'))
+  
+  df_p <- df[df$senti_label == "P",] 
+  df_n <- df[df$senti_label == "N",]
+  df_o <- df[df$senti_label == "O",]
+  
+  # df_n <- df_n[sample(nrow(df_n), 135),]
+  df_o <- df_o[sample(nrow(df_o), 100),]
+  
+  df <- rbind(df_p, df_n, df_o)
+  
+  # df <- subset(df, senti_label != 'O')
+  
   df.dtm <- vectorizer_tfidf(df) #creating the document-term matrix
-  df.dtm <- df.dtm[,colSums(df.dtm != 0) > 3] #dimensionality reduction
+  df.dtm <- df.dtm[,colSums(df.dtm != 0) > 2] # trimming columns that are nearly empty
   
   ml <- prepare_ml(df.dtm, df)
 
   train_data <- ml$train_data
   test_data <- ml$test_data
   
-  train_pos_label <- ml$train_pos_label
-  test_pos_label <- ml$test_pos_label
+  train_label <- ml$train_label
+  test_label <- ml$test_label
   
-  train_neg_label <- ml$train_neg_label
-  test_neg_label <- ml$test_neg_label
-  
-  #Support Vector Machine
-  pos.svm <- svm(x=train_data, y=as.factor(train_pos_label), 
+  # Support Vector Machine
+  pos.svm <- svm(x=train_data, y=as.factor(train_label[,1]), 
                    kernel = "linear", type = "C-classification")
-  pos.predict <- predict(pos.svm, test_data)
-  pos.predict <- ifelse(pos.predict == "P", 1, 0)
-  
-  neg.svm <- svm(x=train_data, y=as.factor(train_neg_label),
-                 kernel = "linear", type = "C-classification")
-  neg.predict <- predict(neg.svm, test_data)
-  neg.predict <- ifelse(neg.predict == "N", -1, 0)
+  neg.svm <- svm(x=train_data, y=as.factor(train_label[,2]), 
+                   kernel = "linear", type = "C-classification")
+  svm.predict.pos <- predict(pos.svm, test_data)
+  svm.predict.neg <- predict(neg.svm, test_data)
+  svm.predict <- ifelse(svm.predict.pos == "P" & svm.predict.neg == "NN", "P", 
+                        ifelse(svm.predict.pos == "NP" & svm.predict.neg == "N", "N", "O"))
+  # svm.predict <- ifelse(svm.predict == "P", 1, 0)
   
   df.test <- ml$test_df
-  df.test$pos.predict <- pos.predict
-  df.test$neg.predict <- neg.predict
-  df.test$svm.label <- pos.predict + neg.predict
+  df.test$svm.label <- svm.predict
   
-  #Random Forest
-  # senti.randomforest <- randomForest(x=train_data, y=as.factor(train_label),
-                                   # mtry=50, tree=35)
-  # senti.predict <- predict(senti.randomforest, test_data)
-  # df.test$rf.label <- senti.predict
+  # Random Forest
+  pos.randomforest <- randomForest(x=train_data, y=as.factor(train_label[,1]),
+                                     mtry=50, tree=35)
+  neg.randomforest <- randomForest(x=train_data, y=as.factor(train_label[,2]),
+                                     mtry=50, tree=35)
+  randomforest.predict.pos <- predict(pos.randomforest, test_data)
+  randomforest.predict.neg <- predict(neg.randomforest, test_data)
+  randomforest.predict <- ifelse(randomforest.predict.pos == "P" & randomforest.predict.neg == "NN", "P", 
+                                 ifelse(randomforest.predict.pos == "NP" & randomforest.predict.neg == "N", "N", "O"))
+  df.test$rf.label <- randomforest.predict
   
-  #Naive Bayes
+  # Naive Bayes
   # senti.nb <- naive_bayes(x=train_data, y = as.factor(train_label))
-  # senti.predict <- predict(senti.nb, test_data)
-  # df.test$nb.label <- senti.predict
+  # nb.predict <- predict(senti.nb, test_data)
+  # df.test$nb.label <- nb.predict
   
-  #DT
+  # DT
   # senti.dt <- rpart(formula = as.factor(train_label) ~., data = as.data.frame(train_data))
-  # senti.predict <- predict(senti.dt, as.data.frame(test_data))
-  # df.test$dt.label <- ifelse(senti.predict[,1] < senti.predict[,2], 1,-1)
+  # dt.predict <- predict(senti.dt, as.data.frame(test_data))
+  # df.test$dt.label.p <- dt.predict[,"P"]
+  # df.test$dt.label.n <- dt.predict[,"N"]
   
-  #Lexicon & Hybrid
-  # df.test <- get_senti(df.test) %>% ensemble_average()
+  # Lexicon & Hybrid
+  df.test <- get_senti(df.test) %>% ensemble_average()
   
   return(list("dtm" = df.dtm, "df.test" = df.test,
               "pos.svm" = pos.svm, "neg.svm" = neg.svm))
-              # "svm" = senti.svm, "randforest" = senti.randomforest))
-  
+              #"svm" = senti.svm, "randforest" = senti.randomforest,
+              #"df_o" = df_o))
 }
 
 ```
@@ -287,10 +304,19 @@ train_ml <- function(df) {
   df$senti_label <- ifelse(df$pos_label=='NP'&df$neg_label=='NN', 'O',
                            ifelse(df$pos_label=='P', 'P', 'N'))
   
+  df_p <- df[df$senti_label == "P",] 
+  df_n <- df[df$senti_label == "N",]
+  df_o <- df[df$senti_label == "O",]
+  
+  df_n <- df_n[sample(nrow(df_n), 150),]
+  # df_o <- df_o[sample(nrow(df_o), 50),]
+  
+  df <- rbind(df_p, df_n, df_o)
+  
   # df <- subset(df, senti_label != 'O')
   
   df.dtm <- vectorizer_tfidf(df) #creating the document-term matrix
-  df.dtm <- df.dtm[,colSums(df.dtm != 0) > 3] #dimensionality reduction
+  df.dtm <- df.dtm[,colSums(df.dtm != 0) > 3] # trimming columns that are nearly empty
   
   ml <- prepare_ml(df.dtm, df)
 
@@ -315,22 +341,24 @@ train_ml <- function(df) {
   randomforest.predict <- predict(senti.randomforest, test_data)
   df.test$rf.label <- randomforest.predict
   
-  #Naive Bayes
+  # Naive Bayes
   # senti.nb <- naive_bayes(x=train_data, y = as.factor(train_label))
-  # senti.predict <- predict(senti.nb, test_data)
-  # df.test$nb.label <- senti.predict
+  # nb.predict <- predict(senti.nb, test_data)
+  # df.test$nb.label <- nb.predict
   
-  #DT
+  # DT
   # senti.dt <- rpart(formula = as.factor(train_label) ~., data = as.data.frame(train_data))
-  # senti.predict <- predict(senti.dt, as.data.frame(test_data))
-  # df.test$dt.label <- ifelse(senti.predict[,1] < senti.predict[,2], 1,-1)
+  # dt.predict <- predict(senti.dt, as.data.frame(test_data))
+  # df.test$dt.label.p <- dt.predict[,"P"]
+  # df.test$dt.label.n <- dt.predict[,"N"]
   
   # Lexicon & Hybrid
   df.test <- get_senti(df.test) %>% ensemble_average()
   
   return(list("dtm" = df.dtm, "df.test" = df.test,
-              #"pos.svm" = pos.svm, "neg.svm" = neg.svm))
-              "svm" = senti.svm, "randforest" = senti.randomforest))
+              # "pos.svm" = pos.svm, "neg.svm" = neg.svm))
+              "svm" = senti.svm, "randforest" = senti.randomforest,
+              "df_o" = df_o))
   
 }
 
@@ -340,28 +368,62 @@ Applying the training function to sampled US data:
 ```{r}
 
 train_us <- train_ml(us_sample)
+
 us_test <- train_us$df.test
 us_sample_dtm <- train_us$dtm
-us_svm <- train_us$pos.svm
-# us_neg_svm <- train_us$neg.svm
+us_svm <- train_us$svm
 us_randomforest <- train_us$randforest
 
 ```
 
 ### Model Performance Metrics:
 
-Confusion Matrix:
+Building a CM function that stratifies the hybrid labels along the "P" "N" & "O" percentiles and creates a confusion matrix:
 ```{r}
 # us_hybrid <- ifelse(us_test$hybrid > 0, "P", "N")
-us_test <- us_test %>% arrange(hybrid)
-us_hybrid <- cut(us_test$hybrid, breaks = c(-Inf, quantile(us_test$hybrid, probs = 0.3), quantile(us_test$hybrid, probs = 0.8), Inf), labels = c("N","O","P"))
-confusionMatrix(table(us_hybrid, us_test$senti_label), positive = "P")
+create_cm <- function (test_df) {
+  test_df <- test_df %>% arrange(hybrid)
+  n_count <- quantile(test_df$hybrid, probs = nrow(test_df[test_df$senti_label=="N",])/nrow(test_df))
+  p_count <- quantile(test_df$hybrid, probs = 1 - nrow(test_df[test_df$senti_label=="P",])/nrow(test_df))
+  hybrid <- cut(test_df$hybrid, 
+                   breaks = c(-Inf, n_count, p_count, Inf),
+                   labels = c("N","O","P"))
+  confusionMatrix(table(hybrid, test_df$senti_label), positive = "P") 
+}
 ```
+
+Confusion Matrix for three-cat sentiment:
+```{r}
+create_cm(us_test)
+us_sample_test <- us_test[us_test$senti_label == "P" | us_test$senti_label == "N", ] 
+confusionMatrix(table(ifelse(us_sample_test$hybrid > 0, "P", "N"), us_sample_test$senti_label), positive = "P")
+```
+
+
+Confusion Matrices for simple 80-20 split:
+```{r}
+confusionMatrix(table(ifelse(us_test$hybrid > 0, "P", "N"), us_test$senti_label), positive = "P")
+```
+
+Using the simple 80-20 split model to predict the "O" class: 
+```{r}
+
+us_o_data <- train_us$df_o
+us_test_expanded <- rbind(us_test[,1:6], us_o_data[,1:6])
+
+us_test_text <- vectorizer_tfidf(us_test_expanded)
+us_test_expanded <-apply_ml(us_test_expanded, us_test_text, us_sample_dtm, us_svm, us_randomforest)
+
+create_cm(us_test_expanded)
+
+```
+
+
 
 ROC:
 ```{r}
-ggplot(us_sample_test) + geom_roc(aes(d = senti_label, m = hybrid), color = "darkgreen") + 
-  geom_roc(aes(d = senti_label, m = afinn_sentiment), color = "red") + theme_minimal()
+# ggplot(us_sample_test) + geom_roc(aes(d = senti_label, m = hybrid), color = "darkgreen") + 
+  # geom_roc(aes(d = senti_label, m = afinn_sentiment), color = "red") + theme_minimal()
 
 # us_senti_label <- ifelse(us_test$senti_label == "P", 1, ifelse(us_test$senti_label == "O", 0, -1))
 # us_hybrid <- cbind(1 - us_test$hybrid, us_test$hybrid)[, us_senti_label]
@@ -374,7 +436,7 @@ roc_a <- roc(ifelse(us_test$senti_label == "O", 1, 0), us_test$hybrid)
 plot(roc_p, print.auc=TRUE, col="green", legacy.axes=TRUE, legacy.layout=TRUE)
 lines(roc_n, col="blue")
 lines(roc_a, col="orange")
-legend("bottomright", legend=c("Positive", "Negative", "Ambiguous"), col=c("red", "blue", "orange"), lty=1)
+legend("bottomright", legend=c("Positive", "Negative", "Ambiguous"), col=c("green", "blue", "orange"), lty=1)
 
 ```
 
@@ -383,17 +445,45 @@ Applying the training function to sampled Chinese data:
 ```{r}
 
 train_china <- train_ml(china_sample)
-china_sample_test <- train_china$df
+china_test <- train_china$df.test
 china_sample_dtm <- train_china$dtm
 china_svm <- train_china$svm
 china_randomforest <- train_china$randforest
 
 ```
 
-Confusion Matrix:
+Model evaluation for China training data trinary categories:
+```{r}
+create_cm(china_test)
+china_sample_test <- china_test[china_test$senti_label == "P" | china_test$senti_label == "N", ] 
+confusionMatrix(table(ifelse(china_sample_test$hybrid > 0, "P", "N"), china_sample_test$senti_label), positive = "P")
+
+roc_p <- roc(ifelse(china_test$senti_label == "P", 1, 0), china_test$hybrid)
+roc_n <- roc(ifelse(china_test$senti_label == "N", 1, 0), china_test$hybrid)
+roc_a <- roc(ifelse(china_test$senti_label == "O", 1, 0), china_test$hybrid)
+
+plot(roc_p, print.auc=TRUE, col="green", legacy.axes=TRUE, legacy.layout=TRUE)
+lines(roc_n, col="blue")
+lines(roc_a, col="orange")
+legend("bottomright", legend=c("Positive", "Negative", "Ambiguous"), col=c("green", "blue", "orange"), lty=1)
+```
+
+
+Confusion Matrix for binary categories:
 ```{r}
 china_hybrid <- ifelse(china_sample_test$hybrid > 0, 1, -1)
 confusionMatrix(table(china_hybrid, china_sample_test$senti_label), positive = "1")
+```
+
+Using binary model to predict "O":
+```{r}
+china_o_data <- train_china$df_o
+china_test_expanded <- rbind(china_sample_test[,1:6], china_o_data[sample(70, 25),1:6])
+
+china_test_text <- vectorizer_tfidf(china_test_expanded)
+china_test_expanded <-apply_ml(china_test_expanded, china_test_text, china_sample_dtm, china_svm, china_randomforest)
+
+create_cm(china_test_expanded)
 ```
 
 ROC:
@@ -449,9 +539,9 @@ Another useful function that subsets the data and then creates term document mat
 subset_dtm <- function (df, rows_kept) {
   df <- df[sample(nrow(df), rows_kept),] # taking a sample to further reduce computational load
   
-  # splitting the large dataframe into four more manageable chunks
+  # splitting the large data frame into four more manageable chunks
   n <- nrow(df)
-  split_indices <- c(0, round(n * 0.25), round(n * 0.5), round(n * 0.75), n)
+  split_indices <- c(0, round(n * 0.5), n)
   
   subset_df <- lapply(seq_along(split_indices)[-1], function(i) {
   start <- split_indices[i-1] + 1
@@ -460,10 +550,10 @@ subset_dtm <- function (df, rows_kept) {
   
   df_dtm <- lapply(subset_df, vectorizer_tfidf) #creating dtms
   
-  df_senti <- vector(mode = "list", length = 4)
-  for (k in 1:4) {
+  df_senti <- vector(mode = "list", length = 2)
+  for (k in 1:2) {
     df_senti[[k]] <- apply_ml(subset_df[[k]], df_dtm[[k]], 
-                           china_sample_dtm, china_svm, china_randomforest)
+                           us_sample_dtm, us_svm, us_randomforest)
   }
   
   df_senti <- do.call(rbind, df_senti)
@@ -478,7 +568,7 @@ subset_dtm <- function (df, rows_kept) {
 ```{r}
 
 # pres.text <- vectorizer_tfidf(pres)
-pres.senti <- apply_ml(pres, pres.text, us_sample_dtm, us_svm, us_randomforest)
+pres.senti.2 <- apply_ml(pres, pres.text, us_sample_dtm, us_svm, us_randomforest)
 
 ```
 
@@ -494,7 +584,7 @@ Saving the labeled file:
 ### Applying the function to congressional data: 
 ```{r}
 
-congress.senti <- congress[!is.na(congress$text),] %>% subset_dtm(rows_kept = 4800)
+congress.senti.2 <- congress[!is.na(congress$text),] %>% subset_dtm(rows_kept = 2000)
 
 ```
 Checking out performance:
@@ -518,16 +608,16 @@ china_sample_dtm <- train_china$dtm
 china_svm <- train_china$svm
 china_randomforest <- train_china$randforest
 
-table(ifelse(china_sample_test$hybrid > 0, 1, -1), china_sample_test$senti_label)
+# table(ifelse(china_sample_test$hybrid > 0, 1, -1), china_sample_test$senti_label)
 
 ```
 
 Then, applying the function to all MOFA and People's Daily data:
 ```{r}
 
-# mofa.senti <- mofa[!is.na(mofa$text),] %>% subset_dtm(rows_kept = 5955)
-peoplesdaily.senti <- subset_dtm(peoplesdaily[peoplesdaily$relevance.label == "R",], 
-                                 rows_kept = nrow(peoplesdaily[peoplesdaily$relevance.label == "R",]))
+mofa.senti.2 <- mofa[!is.na(mofa$text),] %>% subset_dtm(rows_kept = nrow(mofa))
+peoplesdaily.senti.2 <- subset_dtm(peoplesdaily.senti, 
+                                 rows_kept = nrow(peoplesdaily.senti))
 
 ```
 

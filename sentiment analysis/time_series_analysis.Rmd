@@ -16,13 +16,24 @@ Importing packges
 
 library(tseries)
 library(lmtest)
+library(tidyquant)
+
+library(vars)
 
 ```
 
 
 ## Processing US data: 
 ```{r}
-us_data <- rbind(pres.senti, congress.senti[,c(2,1,3,5,4,6,7,8,9,10)]) %>% drop_na(date)
+set.seed(123)
+cong_randsample <- sample(nrow(congress.senti),2000)
+us_data <- rbind(pres.senti, congress.senti[cong_randsample,c(2,1,3,5,4,6,7,8,9,10)]) %>% drop_na(date)
+
+us_data$source <- ifelse(grepl("Pub. Papers", us_data$title), "President: Public Papers", 
+                         ifelse(grepl("Compilation", us_data$title) | grepl("Compilation", us_data$subhead), "President: Daily Compilation",
+                                ifelse(grepl("Cong. Rec.", us_data$title) & grepl("House", us_data$subhead), "Congressional Records: House",
+                                      ifelse(grepl("Cong. Rec.", us_data$title) & grepl("Senate", us_data$subhead), "Congressional Records: Senate",
+                                            ifelse(grepl("Cong. Rec.", us_data$title) & grepl("Daily Digest", us_data$subhead), "Congressional Records: Daily Digest", "CRS Reports & Others")))))
 # us_data <- pres.senti %>% drop_na(date)
 ```
 
@@ -67,13 +78,18 @@ us_month <- group_month(us_data)
 us_week <- group_week(us_data)
 
 pres_week <- pres.senti[!is.na(pres.senti$date),] %>% group_week()
+
+#let's see whether three-label senti analysis results are any different
+pres_week_2 <- pres.senti[!is.na(pres.senti$date),] %>% group_week() 
+
+congress_week <- congress.senti[!is.na(congress.senti$date),] %>% group_week()
 ```
 
 ## Processing Chinese data: 
 Combining mofa and People's Daily: 
 ```{r}
 mofa.senti.cd <- subset(mofa.senti, select = c("date","text",'hybrid'))
-peoplesdaily.senti.cd <- subset(peoplesdaily.senti, select = c("date","text","hybrid"))
+peoplesdaily.senti.cd <- subset(peoplesdaily.senti.2, select = c("date","text","hybrid"))
 
 china_data <- rbind(mofa.senti.cd, peoplesdaily.senti.cd)
 # china_data <- mofa.senti.cd
@@ -84,7 +100,8 @@ Grouping by intervals of time:
 china_month <- china_data[!is.na(china_data$date),] %>% group_month()
 china_week <- china_data[!is.na(china_data$date),] %>% group_week()
 
-mofa_week <- mofa.senti[!is.na(mofa.senti$date),] %>% group_week()
+mofa_week_2 <- mofa.senti.2[!is.na(mofa.senti.2$date),] %>% group_week()
+peoplesdaily_week <- peoplesdaily.senti.2[!is.na(peoplesdaily.senti.2$date),] %>% group_week
 ```
 
 ## Plotting the Time Series
@@ -95,18 +112,24 @@ We can visualize the time series in two ways: line plots of documents grouped by
 
 ggplot() + #geom_bar(data = us_month, aes(x = month, y = -doc_count/50), color = "lightblue", stat = 'identity', alpha = 0.1) +
   # geom_bar(data = china_month, aes(x = month, y = doc_count/50), color = "pink", stat = 'identity', alpha = 0.1) +
-  geom_line(data = china_week, aes(x = week, y = mean_sentiment), color = "red", alpha = 0.1) +
+  # geom_line(data = china_week, aes(x = week, y = mean_sentiment), color = "red", alpha = 0.1) +
   geom_ma(data = china_week, aes(x = week, y = mean_sentiment), linetype = "dotted", color = "red", ma_fun = SMA) + 
-  geom_line(data = us_week, aes(x = week, y = mean_sentiment), color = "darkblue", alpha = 0.1) +
+  # geom_line(data = us_week, aes(x = week, y = mean_sentiment), color = "darkblue", alpha = 0.1) +
   geom_ma(data = us_week, aes(x = week, y = mean_sentiment), linetype = "dotted", color = "darkblue", ma_fun = SMA) + 
   xlab("date") + ylab("mean sentiment") + 
   theme_minimal()
 
+ggplot() + geom_smooth(data = china_week, aes(x = week, y = mean_sentiment), color = "red", method = "loess", span = 0.1, se = F) + 
+  geom_smooth(data = us_week, aes(x = week, y = mean_sentiment), color = "blue", method = "loess", span = 0.1, se = F) + 
+  # geom_smooth(data = congress_week, aes(x = week, y = mean_sentiment), color = "purple", method = "loess", span = 0.1, se = F) + 
+  xlab("date") + ylab("mean sentiment") + #xlim(as.Date(c("2017-01-01", "2023-01-01")))
+  theme_minimal()
+
 ggplot() +
   geom_point(data = subset(china_data, !is.na(date)), aes(x = date, y = hybrid), color = "red", alpha = 0.05) +
-  geom_smooth(data = subset(china_data, !is.na(date)), aes(x = date, y = hybrid), color = "red", method = "loess", span = 0.02) + 
+  geom_smooth(data = subset(china_data, !is.na(date)), aes(x = date, y = hybrid), color = "red", method = "loess", span = 0.02, se = F) + 
   geom_point(data = subset(us_data, !is.na(date)), aes(x = date, y = hybrid), color = "blue", alpha = 0.05) +
-  geom_smooth(data = subset(us_data, !is.na(date)), aes(x = date, y = hybrid), color = "blue", method = "loess", span = 0.02) + 
+  geom_smooth(data = subset(us_data, !is.na(date)), aes(x = date, y = hybrid), color = "blue", method = "loess", span = 0.02, se = F) + 
   xlab("date") + ylab("mean sentiment") + 
   theme_minimal()
 
@@ -116,33 +139,44 @@ ggplot() +
 
 Checking whether US data is stationary with Dickey-Fuller
 ```{r}
-adf.test(pres_week$mean_sentiment)
+adf.test(us_month$mean_sentiment)
 ```
 Checking whether China data is stationary with Dickey-Fuller
 ```{r}
-adf.test(mofa_week$mean_sentiment)
+adf.test(china_month$mean_sentiment)
 ```
-
-Because the MoFA data is not stationary, we will use first-order differencing to stabilize the mean: 
+Creating a function that takes first-order difference of US and China data, and then creates a new master dataset: 
 ```{r}
-mofa_month_diff <- diff(mofa_month$mean_sentiment)
-us_month_diff <- diff(us_month$mean_sentiment)
+stationary_df <- function(china_df, us_df, t_interval) {
+  
+  #Calculating first-order differences:
+  china_diff <- diff(china_df$doc_count)
+  us_diff <- diff(us_df$doc_count)
+  
+  #Integrating the new first-order diff sentiments into a new, larger df:
+  china_df_1 <- china_df[-1,]
+  us_df_1 <- us_df[-1,]
+  
+  china_df_1$senti_diff <- china_diff
+  us_df_1$senti_diff <- us_diff
+  
+  time_series <- inner_join(china_df_1, us_df_1, by = t_interval)
+  # colnames(time_series) <- c(t_interval, "ch_senti", "ndoc_ch", "diff_ch",
+                             # "us_senti", "ndoc_us", "diff_us")
+  colnames(time_series) <- c(t_interval, "ch_senti", "ndoc_ch", "relcount_ch","diff_ch",
+                             "us_senti", "ndoc_us", "relcount_us","diff_us")
+  
+  return(time_series)
+}
 ```
 
-Creating new master dataset with stationary data from both US and China: 
+Implementing the function on US and China monthly data:
 ```{r}
 
-mofa_month_2 <- mofa_month[-1,]
-mofa_month_2$senti_diff <- mofa_month_diff
-
-us_month_2 <- us_month[-1,]
-us_month_2$senti_diff <- us_month_diff
-
-time_series <- left_join(mofa_month_2, us_month_2, by = "month")
-colnames(time_series) <- c("date","senti_china","ndoc_china","sentidiff_china",
-                            "senti_us","ndoc_us","sentidiff_us")
+us_china_month_gct <- stationary_df(china_month, us_month, "month")
 
 ```
+
 
 Plotting first-order differences: 
 ```{r}
@@ -156,35 +190,113 @@ When we group data by week, then we don't need to take first-order differences i
 
 ```{r}
 
+# method = "loess", se = F, span = 0.1
+
 ggplot() + geom_line(data = china_week, aes(x = week, y = mean_sentiment), color = "red") +
   geom_line(data = us_week, aes(x = week, y = mean_sentiment), color = "darkblue") + 
-  xlim(as.Date(c('2015-01-01', '2020-01-01')))
+  xlim(as.Date(c('2005-12-01', '2009-12-01')))
+
+
+ggplot() + geom_line(data = china_week, aes(x = week, y = mean_sentiment), color = "red") +
+  geom_line(data = us_week, aes(x = week, y = mean_sentiment), color = "darkblue") + 
+  xlim(as.Date(c('2017-12-01', '2018-12-01')))
 
 ```
-
-
 
 ## Performing Granger Causality!!
 
-Between first order differences of MOFA and Presidential datasets grouped by month:
+First we merge US and China data:
 ```{r}
+us_china_week_gct <- inner_join(pres_week_2, mofa_week_2, by = "week") # %>% 
+  # subset(week > as.Date("2005-01-01") & week < as.Date("2029-12-01"))
+colnames(us_china_week_gct) <- c("week","us_senti", "us_doc_count", "ch_senti", "ch_doc_count")
+```
 
-gct <- grangertest(sentidiff_us ~ sentidiff_china, order = 1, 
-                   data = time_series)
+Then apply gct:
+```{r}
+gct <- grangertest(us_senti ~ ch_senti, data = us_china_week_gct, order = 2)
 gct
+```
 
+We want to select the optimal lag order based on AIC or BIC
+```{r}
+optimal_k <- VARselect(dplyr::select(us_china_week_gct, c(us_senti, ch_senti)), lag.max = 15, type = "both")
+optimal_k <- rbind(data.frame(lag = 1:15, criteria = optimal_k$criteria[1,], type = "AIC"),
+                   data.frame(lag = 1:15, criteria = optimal_k$criteria[2,], type = "HQ"))
+
+ggplot(data = optimal_k) + geom_line(aes(x = lag, y = criteria, color = type)) + geom_vline(xintercept = 2, linetype = 2) + theme_minimal()
 ```
 
 
-What if we grouped them by week?
+These outputs are crucial! Let's look at how the significance of gct changes both ways as the time frame is adjusted:
+
+First, we will create a function. This one takes a crack at monthly data: 
 ```{r}
 
-us_china_week_gct <- inner_join(us_week, china_week, by = "week")
-colnames(us_china_week_gct) <- c("week","us_sentiment", "us_doc_count", "ch_sentiment", "ch_doc_count")
-
-gct <- grangertest(ch_sentiment ~ us_sentiment, data = us_china_week_gct, order = 5)
-gct
+get_gct_pvalue <- function (dates, us_dat, ch_dat, post_or_pre) {
+  lag_order = 3
+  
+  if (post_or_pre == "post") {
+    # us_china_gct <- stationary_df(ch_dat, us_dat, "month") %>% subset(month > as.Date(dates))
+    # print(colnames(us_china_gct))
+    us_china_gct <- inner_join(us_dat, ch_dat, by = "month") %>% subset(month > as.Date(dates)) 
+  }
+  else {
+   #  us_china_gct <- stationary_df(ch_dat, us_dat, "month") %>% subset(month < as.Date(dates))
+    us_china_gct <- inner_join(us_dat, ch_dat, by = "month") %>% subset(month < as.Date(dates))
+  }
+  
+  colnames(us_china_gct) <- c("week","us_senti", "us_doc_count", "ch_senti", "ch_doc_count")
+  
+  gct_1 <- grangertest(us_senti ~ ch_senti, data = us_china_gct, order = lag_order)
+  gct_2 <- grangertest(ch_senti ~ us_senti, data = us_china_gct, order = lag_order)
+  
+  return(c(gct_1$`Pr(>F)`[2], gct_2$`Pr(>F)`[2]))
+}
 ```
+
+And this one specializes in weekly data: 
+```{r}
+get_gct_pvalue <- function (dates, us_dat, ch_dat, post_or_pre) {
+  lag_order = 3
+  
+  if (post_or_pre == "post") {
+    us_china_gct <- inner_join(us_dat, ch_dat, by = "week") %>% subset(week > as.Date(dates)) 
+  }
+  else {
+    us_china_gct <- inner_join(us_dat, ch_dat, by = "week") %>% subset(week < as.Date(dates))
+  }
+  
+  colnames(us_china_gct) <- c("week","us_senti", "us_doc_count", "ch_senti", "ch_doc_count")
+  
+  gct_1 <- grangertest(us_senti ~ ch_senti, data = us_china_gct, order = lag_order)
+  gct_2 <- grangertest(ch_senti ~ us_senti, data = us_china_gct, order = lag_order)
+  
+  return(c(gct_1$`Pr(>F)`[2], gct_2$`Pr(>F)`[2]))
+}
+```
+
+
+
+Next, we will apply the function:
+```{r}
+
+dates_timeline <- as.Date(paste(2002:2020, "01", "01", sep = "-"))
+gct.output <- data.frame("dates" = dates_timeline)
+
+gct.p <- mapply(get_gct_pvalue, dates_timeline, MoreArgs = list(us_week, china_week, "post"))
+gct.output$chinaresponse <- gct.p[2,]
+gct.output$usresponse <- gct.p[1,]
+
+print(gct.output)
+
+ggplot(data = gct.output) + geom_line(aes(x = dates, y = chinaresponse), color = "red") + 
+  geom_line(aes(x = dates, y = usresponse), color = "blue") + geom_hline(yintercept = 0.05, linetype = "dashed") + 
+  scale_y_continuous(trans = "log10") + ylab("p-value") + 
+  theme_minimal()
+
+```
+
 
 ## Looking at Pos/Neg Doc Count 
 
@@ -192,10 +304,10 @@ Creating a function that filters each dataset by a hybrid sentiment cut-off, and
 
 ```{r}
 
-posneg <- function (df, cut_off, t_interval) {
+posneg <- function (df, cut_off, t_interval, dft) {
   
   # filtering df by sentiment cutoff
-  if (cut_off > 0) {
+  if (cut_off > mean(df$hybrid)) {
     df_filtered <- df[df$hybrid >= cut_off, ]
   }
   else {
@@ -204,10 +316,18 @@ posneg <- function (df, cut_off, t_interval) {
   
   # grouping the data
   if (t_interval == "month") {
-    df_time <- group_month(df_filtered)
+    df_time <- group_month(df_filtered)  
+    df_time <- left_join(df_time, dft, by = "month")
+    df_time$relative_doc_count <- df_time$doc_count.x/df_time$doc_count.y 
+    df_time <- dplyr::select(df_time, -c(4, 5))
+    colnames(df_time) <- c("month", "mean_sentiment", "doc_count", "relative_count")
   }
   else {
     df_time <- group_week(df_filtered)
+    df_time <- left_join(df_time, dft, by = "week")
+        df_time$relative_doc_count <- df_time$doc_count.x/df_time$doc_count.y 
+    df_time <- dplyr::select(df_time, -c(4, 5))
+    colnames(df_time) <- c("week", "mean_sentiment", "doc_count", "relative_count")
   }
   
   return (df_time)
@@ -219,22 +339,43 @@ posneg <- function (df, cut_off, t_interval) {
 Applying the function to US & China data: 
 ```{r}
 
-#setting cutoff to be 1 SD above or below the mean hybrid sentiment 
-ch_cutoff = mean(china_data$hybrid) - sd(china_data$hybrid)
-us_cutoff = mean(us_data$hybrid) - sd(us_data$hybrid)
+# china_data_cut <- subset(china_data, date >= as.Date("2003-12-31") & date <= as.Date("2020-01-01"))
+# us_data_cut <- subset(us_data, date >= as.Date("2003-12-31") & date <= as.Date("2020-01-01"))
 
-ch_posneg <- posneg(china_data, ch_cutoff, "month")
-us_posneg <- posneg(us_data, us_cutoff, "month")
+#setting cutoff to be x SD above or below the mean hybrid sentiment 
+ch_cutoff = mean(china_data$hybrid) + 0.1 * sd(china_data$hybrid)
+us_cutoff = mean(us_data$hybrid)  + 0.1 * sd(us_data$hybrid)
+
+ch_posneg <- posneg(china_data, ch_cutoff, "month", china_month)
+us_posneg <- posneg(us_data, us_cutoff, "month", us_month)
+
+posneg_df <- stationary_df(ch_posneg, us_posneg, "month") # %>% subset(month > as.Date("2009-01-01"))
+# nrow(posneg_df)
+
 
 ```
 
 Creating time series from pos/neg data: 
 ```{r}
 
-ggplot() + geom_smooth(data = ch_posneg, aes(x = month, y = doc_count), color = "red", span = 0.05, se = F) + 
-  geom_smooth(data = us_posneg, aes(x = month, y = doc_count), color = "blue", span = 0.05, se = F) + labs(title = "Count of Negative Sentiment Docs Over Time") + xlim(as.Date(c("2002-11-01","2023-01-01")))
+ggplot(posneg_df) + # + geom_line(aes(x = week, y = relcount_ch), color = "red", alpha = 0.1) + 
+  # geom_line(aes(x = week, y = relcount_us), color = "blue", alpha  = 0.09) + 
+  geom_smooth(aes(x = month, y = relcount_ch), color = "red", span = 0.1, se = F) + 
+  geom_smooth(aes(x = month, y = relcount_us), color = "blue", span = 0.1, se = F) + 
+  labs(title = "Relative Count of Negative Sentiment Docs Over Time", y = "relative count of documents") + theme_minimal()
+# + xlim(as.Date(c("2002-11-01","2022-01-01")))
 
 ```
+
+Applying GCT to the posneg time series: 
+```{r}
+
+gct <- grangertest(diff_us ~ diff_ch, data = posneg_df, order = 2)
+gct
+
+```
+
+
 
 ## Looking at time series when filtering by topics: 
 
@@ -263,12 +404,12 @@ topic_filter <- function (keyword_list, df, t_interval) {
 Compiling keyword lists:
 ```{r}
 
-trade_keywords <- "trade|tariff|protectionist|WTO|import|export|ITC|countervailing duty|intellectual property|manufactur|exchange rate|jobs|currency"
-domestic_periphery_keywords <- "human rights|Xinjiang|Tibet|Hong Kong"
+trade_keywords <- "trade|tariff|protectionis|WTO|import|export|ITC|countervailing duty|intellectual property|manufactur|exchange rate|jobs|currency"
+domestic_periphery_keywords <- "human rights|Xinjiang|Tibet|Hong Kong|Uyghur"
 taiwan_keywords <- "Taiwan"
-multilateral_keywords <- "denuclearization|DPRK|North Korea|Iran|JCPOA|IAEA|Paris|climate"
+multilateral_keywords <- "denucleariz|DPRK|North Korea|Iran|JCPOA|IAEA|Paris|climate|COP|ASEAN|APEC|EAS|G20|summit|multilateral"
 scs_keywords <- "South China Sea"
-epidem_keywords <- "COVID|coronavirus|WHO|epidemic|Ebola|outbreak"
+epidem_keywords <- "COVID|coronavirus|WHO|epidemic|Ebola|outbreak|pandemic|SARS"
 intl_actors_keywords <- "Belt and Road|BRI|Pakistan|Brazil|ASEAN|Germany|France|UK|EU|India|Mexico|APEC|Asia Pacific|Japan"
 russia_keywords <- "Russia"
 counterterrorism_keywords <- "Al Qaeda|ISIS|terrori|extremism|Afghanistan|Iraq"
@@ -313,7 +454,7 @@ rel_count <- function (parent_df, country_df, t_interval) {
   
   rel_counts$others_count[rel_counts$others_count < 0] <- 0
   
-  rel_counts <- mutate_at(rel_counts, c("trade_count", "domestic_periphery_count", "tw_count", "multi_count", "scs_count", "others_count", "epidem_count","intl_actors_count", "russia_count", "counterterrorism_count", "cooperation_count", "competition_count"), function (x) {x / rel_counts$doc_count})
+  # rel_counts <- mutate_at(rel_counts, c("trade_count", "domestic_periphery_count", "tw_count", "multi_count", "scs_count", "others_count", "epidem_count","intl_actors_count", "russia_count", "counterterrorism_count", "cooperation_count", "competition_count"), function (x) {x / rel_counts$doc_count})
   
   return(rel_counts)
   
@@ -331,37 +472,26 @@ rel_counts_us <- rel_count(us_month, us_data, "month")
 Gathering the counts and sentiments in key-value pairs to facilitate visualization:
 ```{r}
 
-topic_counts_us <- gather(rel_counts_us, key = "topic", value = "relative_counts",
+topic_counts_ch <- gather(rel_counts_ch, key = "topic", value = "document counts",
                         trade_count, domestic_periphery_count, tw_count, multi_count, scs_count, 
                         intl_actors_count, russia_count, counterterrorism_count, epidem_count,
                         cooperation_count, competition_count,
                         others_count, -month) 
-topic_counts_us <- select(topic_counts_us, c(1, (ncol(topic_counts_us)-1):ncol(topic_counts_us)))
+topic_counts_ch <- dplyr::select(topic_counts_ch, c(1, (ncol(topic_counts_ch)-1):ncol(topic_counts_ch)))
 
 # topic_counts_ch$topic <- factor(topic_counts_ch$topic, levels = c("trade_count", "multi_count", 
                                                                                       # "scs_count", "tw_count", 
                                                                                      #  "domestic_periphery_count", 
                                                                                       # "others_count"))
 
-topic_senti_us <- gather(rel_counts_us, key = "topic", value = "sentiment",
+topic_senti_ch <- gather(rel_counts_ch, key = "topic", value = "sentiment",
                          trade_sentiments, domestic_periphery_sentiments, tw_sentiments, 
                          multi_sentiments, scs_sentiments, intl_actors_sentiments, 
                          russia_sentiments, counterterrorism_sentiments, epidem_sentiments,
                          cooperation_sentiments, competition_sentiments, 
                          mean_sentiment, -month) 
-topic_senti_us <- select(topic_senti_us, c(1, (ncol(topic_senti_us)-1):ncol(topic_senti_us)))
+topic_senti_ch <- dplyr::select(topic_senti_ch, c(1, (ncol(topic_senti_ch)-1):ncol(topic_senti_ch)))
 
-
-
-topic_counts_us <- gather(rel_counts_us, key = "topic", value = "relative_counts",
-                        trade_count, domestic_periphery_count, tw_count, multi_count, scs_count, 
-                        intl_actors_count, russia_count, counterterrorism_count, 
-                        cooperation_count, competition_count,
-                        others_count, -month) 
-
-topic_senti_us <- gather(rel_counts_us, key = "topic", value = "sentiment",
-                         trade_sentiments, domestic_periphery_sentiments, tw_sentiments, 
-                         multi_sentiments, scs_sentiments, mean_sentiment, -month) %>% select(c(1, 9:10))
 
 ```
 
@@ -372,23 +502,30 @@ First graphing China data:
 ```{r}
 
 legend_labels <- c("domestic periphery, democracy & human rights", "infectious diseases & global health",
-                    "multilateral negotiations", "south china sea", "trade and finance", "taiwan")
+                    "multilateral negotiations", "russia", "south china sea", "trade & finance", "taiwan")
 
-topic_counts_ch_skinny <- subset(topic_counts_ch, topic != "cooperation_count" & topic != "competition_count" & topic != "others_count" & topic != "russia_count" & topic != "intl_actors_count" & topic != "counterterrorism_count")
+topic_counts_ch_skinny <- subset(topic_counts_ch, topic != "cooperation_count" & topic != "competition_count" & topic != "others_count" & topic != "intl_actors_count" & topic != "counterterrorism_count")
 
-topic_senti_ch_skinny <- subset(topic_senti_ch, topic != "cooperation_sentiments" & topic != "competition_sentiments" & topic != "mean_sentiment" & topic != "russia_sentiments" & topic != "intl_actors_sentiments" & topic != "counterterrorism_sentiments")
+topic_senti_ch_skinny <- subset(topic_senti_ch, topic != "cooperation_sentiments" & topic != "competition_sentiments" & topic != "mean_sentiment" & topic != "intl_actors_sentiments" & topic != "counterterrorism_sentiments")
 
+# relative doc counts line plot
 ggplot(topic_counts_ch_skinny) + 
-  geom_smooth(aes(x = month, y = relative_counts, color = topic), method = "loess", span = 0.1, se = F) + 
+  geom_smooth(aes(x = month, y = relative_counts, color = topic), method = "loess", span = 0.5, se = F) + 
   scale_color_discrete(labels = legend_labels) + labs(title = "Chinese Doc Counts by Topic") + 
   theme_minimal() + theme(legend.position = "bottom")  
 
-ggplot(topic_senti_ch_skinny) +
-  geom_smooth(aes(x = month, y = sentiment, color = topic), method = "loess", span = 0.5, se = F) +   
-  scale_color_discrete(labels = legend_labels) + labs(title = "Chinese Doc Sentiments by Topic") + 
+#absolute doc counts area plot
+ggplot(topic_counts_ch_skinny, aes(x = month, y = `document counts`, fill = topic)) + 
+  stat_smooth(geom = "line", method = "loess", position = "stack", span = 0.1, se = F) + 
+  scale_fill_discrete(labels = legend_labels) + labs(title = "Chinese Document Counts by Topic") + 
   theme_minimal() + theme(legend.position = "bottom")  
 
-ggplot(ch_topic[ch_topic$month < as.Date("2018-01-01"),]) + geom_point(aes(x = rel_count, y = mean_sentiment)) + theme_minimal()
+ggplot(topic_senti_ch_skinny) +
+  geom_smooth(aes(x = month, y = sentiment, color = topic), method = "loess", span = 0.7, se = F, linewidth = 0.5) +   
+  scale_color_discrete(labels = legend_labels) + labs(title = "Chinese Document Sentiments by Topic") + 
+  theme_minimal() + theme(legend.position = "bottom")  
+
+# ggplot(ch_topic[ch_topic$month < as.Date("2018-01-01"),]) + geom_point(aes(x = rel_count, y = mean_sentiment)) + theme_minimal()
 
 ```
 
@@ -398,15 +535,118 @@ Next graphing US data:
 # ggplot(topic_counts_us) + geom_smooth(aes(x = month, y = relative_counts, color = topic), method = "loess", span = 0.5, se = F)
 # ggplot(topic_senti_us) + geom_smooth(aes(x = month, y = sentiment, color = topic), method = "loess", span = 0.5, se = F)
 
-ggplot(subset(topic_counts_us, topic != "cooperation_count" & topic != "competition_count" & topic != "others_count" & topic != "russia_count" & topic != "intl_actors_count" & topic != "counterterrorism_count")) + 
-  geom_smooth(aes(x = month, y = relative_counts, color = topic), method = "loess", span = 0.5, se = F) + 
-  scale_color_discrete(labels = legend_labels) + labs(title = "US Doc Counts by Topic") + 
+# relative doc counts line plot
+ggplot(subset(topic_counts_us, topic != "cooperation_count" & topic != "competition_count" & topic != "others_count" & topic != "intl_actors_count" & topic != "counterterrorism_count")) + 
+  geom_smooth(aes(x = month, y = `document counts`, color = topic), method = "loess", span = 0.5, se = F) + 
+  scale_color_discrete(labels = legend_labels) + labs(title = "US Document Counts by Topic") + 
+  theme_minimal() + theme(legend.position = "bottom") 
+
+#absolute doc counts area plot
+ggplot(subset(topic_counts_us, topic != "cooperation_count" & topic != "competition_count" & topic != "others_count" & topic != "intl_actors_count" & topic != "counterterrorism_count"), aes(x = month, y = `document counts`, fill = topic)) + 
+  stat_smooth(geom = "area", method = "loess", span = 0.1, position = "stack") + 
+  scale_fill_discrete(labels = legend_labels) + labs(title = "US Document Counts by Topic") + 
+  theme_minimal() + theme(legend.position = "bottom") 
+
+ggplot(subset(topic_senti_us, topic != "cooperation_sentiments" & topic != "competition_sentiments" & topic != "intl_actors_sentiments" & topic != "counterterrorism_sentiments" & topic != "mean_sentiment")) +
+  geom_smooth(aes(x = month, y = sentiment, color = topic), method = "loess", span = 0.7, linewidth = 0.5, se = F) +   
+  scale_color_discrete(labels = legend_labels) + labs(title = "US Document Sentiments by Topic") + 
   theme_minimal() + theme(legend.position = "bottom")  
 
-ggplot(subset(topic_senti_us, topic != "cooperation_sentiments" & topic != "competition_sentiments" & topic != "russia_sentiments" & topic != "intl_actors_sentiments" & topic != "counterterrorism_sentiments" & topic != "mean_sentiment")) +
-  geom_smooth(aes(x = month, y = sentiment, color = topic), method = "loess", span = 0.5, se = F) +   
-  scale_color_discrete(labels = legend_labels) + labs(title = "US Doc Sentiments by Topic") + 
-  theme_minimal() + theme(legend.position = "bottom")  
+```
 
+Plotting US and China time series side by side to see if there are any more interesting correlations? 
+```{r}
+topics <- list("domestic_periphery_sentiments", "multi_sentiments", "trade_sentiments", "tw_sentiments")
+
+topics_c <- list("cooperation_count", "competition_count")
+
+plot_topics <- function (topics) {
+  ggplot() + 
+    geom_smooth(data = rel_counts_ch, aes_string(x = "month", y = topics), method = "loess", span = 0.7, se = F, color = "red", linetype = 2) + 
+    geom_smooth(data = rel_counts_ch, aes_string(x = "month", y = topics), method = "loess", span = 0.1, se = F, color = "red", linewidth = 0.3) + 
+    geom_smooth(data = rel_counts_us, aes_string(x = "month", y = topics), method = "loess", span = 0.7, se = F, color = "blue", linetype = 2) +
+    geom_smooth(data = rel_counts_us, aes_string(x = "month", y = topics), method = "loess", span = 0.1, se = F, color = "blue", linewidth = 0.3) + 
+    # geom_smooth(data = rel_counts_ch, aes(x = month, y = mean_sentiment), color = "red", method = "loess", span = 0.3, se = F, alpha = 0.05) + 
+    # geom_smooth(data = rel_counts_us, aes(x = month, y = mean_sentiment), color = "blue", method = "loess", span = 0.3, se = FALSE, alpha = 0.05) +
+    labs(x = "time", y = "mean sentiment", title = paste(topics, "US and China over time", sep = " ")) + theme_minimal()}
+
+lapply(topics, plot_topics)
+```
+
+Spike in domestic periphery mentions coincides with sharp drop-off in overall sentiment for Chinese data:
+```{r}
+ggplot() + geom_smooth(data = rel_counts_ch, aes(x = month, y = domestic_periphery_count/doc_count), method = "loess", span = 0.3, se = F, color = "red", linewidth = 0.3) + 
+  geom_smooth(data = rel_counts_ch, aes(x = month, y = mean_sentiment*0.2), method = "loess", span = 0.3, se = F, color = "red", linewidth = 0.8, linetype = 3) +
+  scale_y_continuous(name = "domestic periphery: relative document count", sec.axis = sec_axis(~.*5, name = "mean sentiment of full data")) + theme_minimal()
+```
+
+
+
+Since we have disaggregated the data based on topic, let's apply granger causality to some topics of interest and see the patterns of interaction between US and Chinese discourse: 
+```{r}
+
+topics <- list("domestic_periphery", "multi", "trade", "tw", "scs", "epidem", "russia")
+
+data_by_topic_us <- lapply(topics, function (topics) {
+  dat_list <- dplyr::select(rel_counts_us, c(month, starts_with(topics)))
+  return(dat_list)})
+
+data_by_topic_ch <- lapply(topics, function (topics) {
+  dat_list <- dplyr::select(rel_counts_ch, c(month, starts_with(topics)))
+  return(dat_list)})
+
+
+dates_timeline <- as.Date(paste(2002:2018, "01", "01", sep = "-"))
+
+for (i in 1:length(dates_timeline)) {
+  
+    topic.gct.p <- mapply(get_gct_pvalue, data_by_topic_us, 
+                          data_by_topic_ch, MoreArgs = list(dates = dates_timeline[i], post_or_pre = "post")) %>% 
+    as.data.frame()
+  
+  colnames(topic.gct.p) <- topics
+  rownames(topic.gct.p) <- c(paste("usresponse", dates_timeline[i]), "chresponse")
+  
+  print(topic.gct.p)
+  
+}
+
+
+```
+
+
+Let's try to perform granger causality again on trade-specific documents, once again experimenting across a set of different time frames:
+```{r}
+
+dates_timeline <- as.Date(paste(2008:2023, "01", "01", sep = "-"))
+gct.output <- data.frame("dates" = dates_timeline)
+
+topic.gct.p <- mapply(get_gct_pvalue, dates_timeline, MoreArgs = list(dplyr::select(rel_counts_us, c(month, domestic_periphery_sentiments, domestic_periphery_count)),
+                                                                dplyr::select(rel_counts_ch, c(month, domestic_periphery_sentiments, domestic_periphery_count)), 
+                                                                "pre"))
+gct.output$chinaresponse <- topic.gct.p[2,]
+gct.output$usresponse <- topic.gct.p[1,]
+
+gct.output
+
+ggplot(data = gct.output) + geom_line(aes(x = dates, y = chinaresponse), color = "red") + 
+  geom_line(aes(x = dates, y = usresponse), color = "blue") + geom_hline(yintercept = 0.05, linetype = "dashed") + 
+  scale_y_continuous(trans = "log10") + ylab("p-value") + 
+  theme_minimal()
+
+```
+
+
+Compiling a dataset with high-magnitude sentiments for qualitative probing: 
+```{r}
+china_data_cut <- china_data %>% subset(abs(hybrid) > 1.2) 
+china_data_cut$country <- "china"
+
+us_data_cut <- us_data %>% subset(abs(hybrid) > 1.1) %>% select(c(date, text, hybrid))
+us_data_cut$country <- "us"
+
+qualitative_study <- rbind(china_data_cut, us_data_cut) %>% arrange(date)
+
+ggplot(qualitative_study, aes(x = date, y = hybrid)) + geom_smooth(aes(color = country), method = "loess", span = 0.1, se = F) 
 ```
 
