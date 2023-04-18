@@ -185,9 +185,10 @@ prepare_ml <- function (dtm, original_data) {
   test_df <- original_data[group_index$test,]
   
   ml_list <- list("train_data" = train_data, "test_data" = test_data, 
-                  "train_pos_label" = train_pos_label, "test_pos_label" = test_pos_label,
-                  "train_neg_label" = train_neg_label, "test_neg_label" = test_neg_label,
+                  "train_label" = cbind(train_pos_label, train_neg_label),
+                  "test_label" = cbind(test_pos_label, test_neg_label),
                   "test_df" = test_df)
+
   return(ml_list)
 }
 ```
@@ -227,19 +228,8 @@ train_ml <- function(df) {
   df$senti_label <- ifelse(df$pos_label=='NP'&df$neg_label=='NN', 'O',
                            ifelse(df$pos_label=='P', 'P', 'N'))
   
-  df_p <- df[df$senti_label == "P",] 
-  df_n <- df[df$senti_label == "N",]
-  df_o <- df[df$senti_label == "O",]
-  
-  # df_n <- df_n[sample(nrow(df_n), 135),]
-  df_o <- df_o[sample(nrow(df_o), 100),]
-  
-  df <- rbind(df_p, df_n, df_o)
-  
-  # df <- subset(df, senti_label != 'O')
-  
   df.dtm <- vectorizer_tfidf(df) #creating the document-term matrix
-  df.dtm <- df.dtm[,colSums(df.dtm != 0) > 2] # trimming columns that are nearly empty
+  df.dtm <- df.dtm[,colSums(df.dtm != 0) > 3] # trimming columns that are nearly empty
   
   ml <- prepare_ml(df.dtm, df)
 
@@ -308,10 +298,10 @@ train_ml <- function(df) {
   df_n <- df[df$senti_label == "N",]
   df_o <- df[df$senti_label == "O",]
   
-  df_n <- df_n[sample(nrow(df_n), 150),]
-  # df_o <- df_o[sample(nrow(df_o), 50),]
+  # df_n <- df_n[sample(nrow(df_n), 150),]
+  df_o <- df_o[sample(nrow(df_o), 75),]
   
-  df <- rbind(df_p, df_n, df_o)
+  df <- rbind(df_p, df_n)
   
   # df <- subset(df, senti_label != 'O')
   
@@ -371,8 +361,8 @@ train_us <- train_ml(us_sample)
 
 us_test <- train_us$df.test
 us_sample_dtm <- train_us$dtm
-us_svm <- train_us$svm
-us_randomforest <- train_us$randforest
+# us_svm <- train_us$svm
+# us_randomforest <- train_us$randforest
 
 ```
 
@@ -388,7 +378,7 @@ create_cm <- function (test_df) {
   hybrid <- cut(test_df$hybrid, 
                    breaks = c(-Inf, n_count, p_count, Inf),
                    labels = c("N","O","P"))
-  confusionMatrix(table(hybrid, test_df$senti_label), positive = "P") 
+  confusionMatrix(table(hybrid, test_df$senti_label), positive = "P", mode = "everything") 
 }
 ```
 
@@ -553,7 +543,7 @@ subset_dtm <- function (df, rows_kept) {
   df_senti <- vector(mode = "list", length = 2)
   for (k in 1:2) {
     df_senti[[k]] <- apply_ml(subset_df[[k]], df_dtm[[k]], 
-                           us_sample_dtm, us_svm, us_randomforest)
+                           china_sample_dtm, china_svm, china_randomforest)
   }
   
   df_senti <- do.call(rbind, df_senti)
