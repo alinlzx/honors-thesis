@@ -16,6 +16,8 @@ Run everything from the repo root. Data paths come from `HONORS_DATA_DIR` (defau
 | Clean presidential docs | `clean/01a_clean_presdocs.R` | `raw/01_govinfo_presdocs.csv` | `clean/01a_presdocs_paragraphs.csv`, `clean/01a_presdocs_docs.csv` |
 | Check speaker attribution | `clean/01b_check_presdocs_speakers.R` | DCPD HTML cache, 01a outputs | `clean/01b_presdocs_speaker_check.csv` |
 | Clean MFA press conferences | `clean/02_clean_mfa.R` | `raw/03_CMFA_PressCon_v6.xlsx` | `clean/02_mfa_qa.csv` |
+| Scrape White House briefings | `scrape/02_scrape_app_briefings.py` | American Presidency Project (cached in `raw/app_briefings/`) | `raw/02_app_briefings.csv` |
+| Clean White House briefings | `clean/03_clean_briefings.R` | `raw/02_app_briefings.csv` | `clean/03_briefings_paragraphs.csv`, `clean/03_briefings_pairs.csv` |
 
 ```bash
 .venv/bin/python scrape/01_scrape_govinfo_presdocs.py
@@ -29,6 +31,13 @@ Rscript clean/01b_check_presdocs_speakers.R
 ```bash
 Rscript clean/02_clean_mfa.R
 ```
+```bash
+Rscript clean/03_clean_briefings.R
+```
+
+The China term lists (`CHINA_CORE`, `CHINA_PERIPH`) live in `config.R`, so every US-side
+script flags China the same way. They were moved there from 01a on Oct 23, 2026, and 01a's
+counts were unchanged by the move.
 
 The scraper reads from its cache, so a re-run after the first full scrape makes no API calls.
 
@@ -245,7 +254,121 @@ question, and 23,606 in neither.
 
 ---
 
-## 3. Unit of analysis and aggregation (proposed, not built yet)
+## 3. White House press briefings (US side, genre-matched series)
+
+Source: American Presidency Project, "Press Briefings" category (2002–2025): briefings,
+gaggles, and on-record and background press calls by the White House press office. This is
+not the State Department briefings dropped in October. **A daily spokesperson Q&A is the
+closest US counterpart to the MFA press conferences**, so these give a genre-matched
+US ↔ China comparison next to the main President ↔ MFA pairing. The scrape keeps every
+briefing, not only China ones.
+
+### 3.1 Coverage
+
+- 5,143 briefings. Most years have 200–380; China comes up in about a third of them.
+- **2019 is nearly empty (16 briefings), and 2018 and 2020 are thin (116 and 62).** This is
+  real: the Trump White House largely stopped daily briefings.
+- **2025 has only 57 briefings, although Leavitt briefed regularly.** The American
+  Presidency Project probably hasn't posted them yet, or files them elsewhere. *Not yet
+  verified.*
+- 15 of 288 months have no briefing that mentions China. **A briefings-only time series is
+  usable for 2002–2017 and 2021–2024.** It can't replace the presidential series.
+
+### 3.2 Cleaning
+
+- Metadata:
+  - President comes from the American Presidency Project's own field.
+  - Briefings by the Vice President's or First Lady's press office are flagged
+    (`other_office`), not dropped.
+  - `format` is taken from the title: briefing, gaggle, call or background.
+- 2 transcripts posted twice under different titles are dropped (same date and identical
+  text).
+- Speaker labels are upper case and end in a colon ("MS. PSAKI:"). Requiring capitals keeps
+  sentence openers like "Let me be clear:" from reading as labels. Mixed-case surnames such
+  as "McCLELLAN" are allowed, and "Q" can appear without a colon. An unlabeled paragraph
+  continues the previous speaker.
+- **Header:** everything before the first label is dropped: location lines ("James S. Brady
+  Press Briefing Room", "Aboard Air Force One"), time stamps, and "PARTICIPANTS" lists. That
+  is 10,380 paragraphs, 201 of them longer than 200 characters, mostly participant lists. 20
+  transcripts have no labels at all and drop out entirely; they are readouts, not Q&A.
+- **Trailer:** "END" and everything after it is dropped, as are time stamps elsewhere and
+  "To view the …" video links.
+- Parenthetical stage directions ("(Laughter.)", "(Inaudible.)", "(Cross-talk.)") are
+  removed.
+- **Bracketed redactions such as "[Senior administration official]" are kept**, because
+  they stand in for words that were said.
+
+### 3.3 Roles
+
+Each speaker gets a role:
+
+- `question`: Q, QUESTION, THE PRESS, PARTICIPANT, AUDIENCE MEMBER, REPORTER.
+- `floor`: moderators and call operators, including the source's typos. They only manage
+  the floor.
+- `president`: THE PRESIDENT, when he drops in. 250 paragraphs. Some of these may also
+  appear in the GovInfo presidential documents, so drop them if the two series are pooled.
+- `anonymous`: any label containing "OFFICIAL", such as "SENIOR ADMINISTRATION OFFICIAL".
+  The source's misspelling "ADMINSTRATION" is fixed.
+- `press_secretary`: White House press secretaries and the principal deputies who held
+  regular briefings, Fleischer through Leavitt.
+  - Matched on the surname, with no title in the label, so "SECRETARY LEAVITT" (HHS) and
+    "GENERAL KELLY" don't match.
+  - Case is ignored ("MS. MCENANY"), and one typo is allowed ("MR. EARENST").
+  - A first version matched surnames exactly and case-sensitively. It labeled "GENERAL
+    KELLY" and "REPRESENTATIVE WASSERMAN SCHULTZ" as press secretaries and missed McEnany.
+- `official`: everyone else at the podium, such as national security advisers, cabinet
+  members, Fauci and Kirby.
+
+**Every administration official who answers counts as the US voice, not only the press
+secretary.** On China, guest briefers (national security advisers, Kirby) and background
+officials previewing trips are often the main speakers. The role flags let build/ restrict
+to `press_secretary`, or drop `anonymous`, as robustness checks.
+
+Paragraphs by role: press secretary 359,719 · question 247,387 · official 102,884 ·
+anonymous 27,566 · floor 4,186 · president 250.
+
+### 3.4 Pairs
+
+- **A pair is a run of question paragraphs (with follow-ups) plus the officials' paragraphs
+  after it, up to the next question.** This is the MFA unit.
+- The answer text includes only `press_secretary`, `official`, `anonymous` and `president`
+  paragraphs; moderator lines are left out. Pairs with no answer are dropped (questions
+  shouted at the end, crosstalk).
+- **"Go ahead.", or a reporter's name, between two question paragraphs is a handover, not an
+  answer**, so the question run continues across it. Real one-word answers ("Yes.", "No.")
+  are not treated this way.
+- **Opening statements (before the first question) are split into one row per paragraph,
+  with no question.** They are the counterpart of MFA opening remarks, but a briefing
+  opener covers many topics at once.
+- **Multi-part questions are not split into sub-answers, unlike in the MFA source.** An
+  answer can cover China and then Ukraine. The paragraph file keeps per-paragraph China
+  flags, so build/ can score only an answer's China paragraphs as a robustness check.
+
+China flags:
+
+- `china_core_q`, `china_any_q`: China terms in the question.
+- `china_core_a`, `china_any_a`: China terms in the answer.
+- **`prev_china_core`: the previous pair in the same briefing was about China.** This is
+  for follow-ups that don't name China ("And on the tariffs?"), and for clarifications such
+  as Spicer's "It's retaliating against what?", where the real answer lands in the next
+  pair. The flag is loose: the next pair is often on another topic. Use it only as a
+  robustness check.
+
+Result:
+
+- 222,345 Q&A pairs and 57,390 opening-statement paragraphs.
+- 3,966 pairs have China (core terms) in the answer. **Another 2,190 name China only in the
+  question**, typically answered with "I'll have to take the question" or "I'm not going to
+  get ahead of the President".
+- 4,164 pairs are flagged only as follow-ups to a China pair.
+- 1,131 opening paragraphs mention China.
+- Answers are short: the median is 282 characters, the 90th percentile 1,205.
+
+**Proposed relevance rule, matching the MFA one:** China in the answer or in the question.
+
+---
+
+## 4. Unit of analysis and aggregation (proposed, not built yet)
 
 - **Each mention is not its own observation.** Mentions within one passage aren't
   independent. Sentence windows are too short to score and miss references by pronoun.
@@ -255,6 +378,8 @@ question, and 23,606 in neither.
     the answer must).
   - President: a paragraph of his that mentions China, or his whole answer turn to a
     question that mentions China (use `turn_id`).
+  - Briefings: a pair where the answer or the question mentions China, plus opening
+    paragraphs that mention China (section 3).
   
   An MFA answer (median about 630 characters) is about the size of a presidential paragraph,
   so the two sides are scored on comparable units.
@@ -278,6 +403,12 @@ question, and 23,606 in neither.
   initial looks like a reporter label.
 - MFA non-answers ("I have no information to offer") are kept. They will score as neutral
   and may pull monthly means toward zero. Consider flagging them.
+- Briefings: about 40 one-off misspelled speaker labels (for example "M. MRCLELLN",
+  "QMS. PSAKI") end up as `official` or with the wrong role. They are too few to matter
+  unless build/ restricts to press secretaries.
+- Briefings: answers are shorter than MFA answers (median 282 vs 627 characters) and more
+  often non-answers. Check whether scores need a length control before comparing the two
+  sides.
 - MFA `who_asked` is missing for 21k of 35k rows, so it can't be used to separate questions
   from foreign and Chinese outlets.
 - The Taiwan, Hong Kong and Tibet terms widen the presidential corpus. Whether that text is

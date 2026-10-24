@@ -32,10 +32,16 @@ session = requests.Session()
 
 
 def call(method, url, **kwargs):
-    """Request with retries; backs off on rate limiting (429) and server errors."""
+    """Request with retries; backs off on rate limiting (429), server errors and dropped
+    connections (wifi blips, or the laptop sleeping mid-request)."""
     params = {**kwargs.pop("params", {}), "api_key": GOVINFO_API_KEY}
     for attempt in range(8):
-        r = session.request(method, url, params=params, timeout=60, **kwargs)
+        try:
+            r = session.request(method, url, params=params, timeout=60, **kwargs)
+        except (requests.ConnectionError, requests.Timeout) as e:
+            print(f"  {type(e).__name__}, sleeping 60s", file=sys.stderr)
+            time.sleep(60)
+            continue
         if r.status_code == 429 or r.status_code >= 500:
             wait = 600 if r.status_code == 429 else 2 ** attempt
             print(f"  HTTP {r.status_code}, sleeping {wait}s", file=sys.stderr)

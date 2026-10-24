@@ -291,11 +291,7 @@ paras <- paras %>%
 
 # ---- China mentions ----------------------------------------------------------------
 
-# Core terms name the PRC, its leaders or its government. Peripheral terms (Taiwan,
-# Hong Kong, Tibet, Xinjiang) were in the scrape query too; whether they count is a
-# build/ decision. Case-sensitive so "china" (porcelain) does not match.
-CHINA_CORE <- "\\b(China|Chinese|PRC|Beijing|Sino-|Xi|Xi Jinping|Hu Jintao|Jiang Zemin|Wen Jiabao|Li Keqiang|Li Qiang|CCP|Huawei|TikTok|ZTE|Wuhan)\\b"
-CHINA_PERIPH <- "\\b(Taiwan|Taiwanese|Taipei|Hong Kong|Tibet|Tibetan|Xinjiang|Uyghurs?|Uighurs?|Dalai Lama|Macau|Macao)\\b"
+# CHINA_CORE and CHINA_PERIPH are defined in config.R, shared with the briefings.
 
 paras <- paras %>%
   mutate(

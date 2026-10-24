@@ -10,3 +10,10 @@ RAW_DIR <- file.path(DATA_DIR, "raw")
 CLEAN_DIR <- file.path(DATA_DIR, "clean")
 BUILD_DIR <- file.path(DATA_DIR, "build")
 ANALYSIS_DIR <- file.path(DATA_DIR, "analysis")
+
+# China terms, shared by every US-side cleaning script. Core terms name the PRC, its
+# leaders or its government. Peripheral terms (Taiwan, Hong Kong, Tibet, Xinjiang) were
+# in the scrape queries too; whether they count is a build/ decision. Case-sensitive so
+# "china" (porcelain) does not match.
+CHINA_CORE <- "\\b(China|Chinese|PRC|Beijing|Sino-|Xi|Xi Jinping|Hu Jintao|Jiang Zemin|Wen Jiabao|Li Keqiang|Li Qiang|CCP|Huawei|TikTok|ZTE|Wuhan)\\b"
+CHINA_PERIPH <- "\\b(Taiwan|Taiwanese|Taipei|Hong Kong|Tibet|Tibetan|Xinjiang|Uyghurs?|Uighurs?|Dalai Lama|Macau|Macao)\\b"
