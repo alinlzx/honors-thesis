@@ -1,3 +1,12 @@
 beautifulsoup4==4.15.0
+huggingface_hub==2.4.0
+numpy==2.5.4
+pandas==3.1.0
+protobuf==7.36.2
 python-dotenv==1.2.4
 requests==2.34.2
+scikit-learn==1.9.1
+sentencepiece==0.2.2
+tiktoken==0.14.0
+torch==2.15.0
+transformers==5.22.1

@@ -18,6 +18,8 @@ methodology**: adding robustness checks and fixing choices that were clearly mis
 When a methodological choice is questionable, say so and propose an alternative instead of
 quietly reproducing it.
 
+However, make methodology fixes and robustness checks recommendation targeted. Be conservative about what analyses can be carried out in two weeks. The goal should be to produce a viable writing sample for a poli sci phd program, not a working paper.
+
 ## Data
 
 Raw data lives **outside this repo** in the sibling folder `../honors-thesis-data/`.
@@ -29,7 +31,7 @@ Never copy raw data into this repo or commit it.
 | `PeoplesDailyUSA.xlsx` | China | People's Daily articles (Fisher et al.), filtered to US mentions |
 | `Presidential_Library.xlsx` | US | Presidential documents mentioning China (original scrape) |
 | `Congress1.xlsx`, `Congress2.xlsx` | US | Congressional documents mentioning China (original scrape) |
-| `sample data/*_sample.xlsx` | both | Hand-labeled samples used to train and validate the sentiment classifiers |
+| `clean/04_sample_data/*_sample.xlsx` | both | The thesis's hand-labeled samples (general tone, not attitude toward the other country); new coding sheets from `clean/04_sample_data.R` sit beside them |
 
 Files live under `raw/` and `build/` in the data folder. `raw/CMFA_PressCon_v6.xlsx` is the
 full MFA press-conference corpus (Mochtak & Turcsanyi v6, 2002–2025); rebuild the US filter
