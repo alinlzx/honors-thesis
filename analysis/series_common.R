@@ -40,6 +40,41 @@ document_means <- function(passages, score) {
     summarise(value = mean(.data[[score]]), passages = n(), .groups = "drop")
 }
 
+# Kept passages with spec D's raw and speaker-adjusted scores (build/06), for the series analyses.
+load_scored_passages <- function() {
+  kept <- load_kept_passages()
+  passages <- kept %>%
+    inner_join(select(read_build("06_adjusted_scores.csv"), unit_id, source, net_06 = net, net_adj),
+               by = c("unit_id", "source"))
+  stopifnot(nrow(passages) == nrow(kept), isTRUE(all.equal(passages$net, passages$net_06)))
+  select(passages, -net_06)
+}
+
+# Calendar-month series: passages to document means, then the mean of a month's documents, so
+# each speech, press conference or briefing counts once (analysis_recipes.md 4). Months are
+# non-overlapping; a month with no document is absent, not zero.
+monthly_series <- function(passages, score) {
+  document_means(passages, score) %>%
+    group_by(source, month) %>%
+    summarise(value = mean(value), documents = n(), passages = sum(passages), .groups = "drop")
+}
+
+# Does x Granger-cause y? An F-test that k lags of x add nothing to an autoregression of y with
+# a constant, on a regular calendar grid that may contain missing values (NA). A row enters only
+# when y and all k lags of both series are observed, so a lag is always k calendar periods; rows
+# are never closed up across a gap, as the thesis's inner_join did. With no missing values this
+# is identical to lmtest::grangertest.
+granger_calendar <- function(x, y, k) {
+  lags <- function(v) sapply(seq_len(k), function(j) c(rep(NA, j), head(v, -j)))
+  y_lags <- lags(y)
+  x_lags <- lags(x)
+  ok <- complete.cases(y, y_lags, x_lags)
+  if (sum(ok) <= 2 * k + 2) return(c(p = NA_real_, n = sum(ok)))
+  restricted <- lm(y[ok] ~ y_lags[ok, , drop = FALSE])
+  full <- lm(y[ok] ~ y_lags[ok, , drop = FALSE] + x_lags[ok, , drop = FALSE])
+  c(p = anova(restricted, full)$`Pr(>F)`[2], n = sum(ok))
+}
+
 # Split-half reliability of the monthly series, by source and period. Each month's documents
 # are split at random into halves; each half's monthly value is the mean of its documents; the
 # halves are correlated across months, in levels and in month-to-month changes, and

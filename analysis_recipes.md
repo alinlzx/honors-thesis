@@ -28,6 +28,9 @@ Run everything from the repo root. Data paths come from `HONORS_DATA_DIR` (defau
 | Compare the specs | `analysis/01_evaluate_specs.R` | build 01–05 outputs | `analysis/01_*.csv`, `analysis/01{a,b,c}_*.png` |
 | Measurement quality by period | `analysis/02_measurement_by_period.R` | build 01, 02, 04, 05 outputs | `analysis/02_*_by_period.csv`, `analysis/02_table_measurement.tex` |
 | Composition check | `analysis/03_composition_check.R` | build 01, 02, 05, 06 outputs | `analysis/03_reliability_adjusted.csv`, `analysis/03_adjustment_effect.csv` |
+| Time series figures | `analysis/04_plot_time_series.R` | build 01, 02, 05, 06 outputs | `analysis/04_monthly_series.csv`, `analysis/04{a,b}_*.png` |
+| Forward-dated Granger tests, monthly | `analysis/05a_forward_dated_granger.R` | build 01, 02, 05, 06 outputs | `analysis/05a_granger_forward.csv`, `analysis/05a_stationarity.csv`, `analysis/05a_table_granger_forward.tex` |
+| Forward-dated Granger tests, weekly | `analysis/05b_forward_dated_granger_weekly.R` | build 01, 02, 05, 06 outputs | `analysis/05b_granger_weekly.csv`, `analysis/05b_weekly_coverage.csv`, `analysis/05b_table_granger_weekly.tex` |
 
 `analysis/series_common.R` (unnumbered, like `build/sentiment_common.py`) holds what the series
 analyses share: the periods, the relevance cut, the kept passages and the split-half reliability.
@@ -76,6 +79,15 @@ Rscript analysis/02_measurement_by_period.R
 ```
 ```bash
 Rscript analysis/03_composition_check.R
+```
+```bash
+Rscript analysis/04_plot_time_series.R
+```
+```bash
+Rscript analysis/05a_forward_dated_granger.R
+```
+```bash
+Rscript analysis/05b_forward_dated_granger_weekly.R
 ```
 
 The China term lists (`CHINA_CORE`, `CHINA_PERIPH`) live in `config.R`, so every US-side
@@ -731,6 +743,151 @@ A month's mean can move because of who spoke or in what format, not because post
   48 months, both are consistent with no month-to-month signal, as in 6.7.
 - *Open:* use `net_adj` as the main series and `net` as the robustness check, or the reverse.
   `net_adj` is the cleaner measure of posture and is more reliable for MFA. Either way, report both.
+
+---
+
+## 7. Time series and forward-dated Granger tests (Nov 8, 2026)
+
+These replicate the thesis's Figures 9, 10 and 13 on the rebuilt corpora, using spec D's
+speaker-adjusted score (`net_adj`). The thesis's Figure 14 (pooled US and China data) is dropped.
+`series_common.R` now holds `load_scored_passages()`, `monthly_series()` and `granger_calendar()`, so
+every series analysis builds its periods and runs its tests the same way.
+
+### 7.1 Monthly series
+
+- **The unit is the calendar month: passages → document means → mean of the month's documents.**
+  This is the aggregation proposed in section 4.
+- **The thesis's weekly series were not rolling averages.** `group_week` in the old
+  `time_series_analysis.Rmd` put passages into non-overlapping 7-day bins. **The two sides were
+  then joined with `inner_join`, which dropped every week in which either side was silent, and
+  the remaining rows were treated as consecutive.** So "lag 3" meant three observed weeks, not
+  three calendar weeks.
+- **Months do not overlap. A rolling 30-day mean was considered and rejected.** Overlapping
+  windows share passages, so neighbouring values are mechanically correlated. That builds a
+  moving-average structure into both series, which the Granger lags then have to fit, and it
+  makes the F-tests overconfident.
+- **Missing months are linearly interpolated for the tests.** There are 14 MFA months
+  (the August recess through 2015, plus December 2011 and July 2012) and 1 presidential month
+  (June 2003), out of 279. Closing the series up over them would repeat the thesis's lag error.
+  Windows starting in 2016 or later have no gaps. The figures plot only the observed months.
+- **Check: gaps left missing.** Interpolation fills a gap with part of the next month's value,
+  which leaks a little of the future into the lags. So 05a also runs every test with gaps left
+  missing, in the CSV as `gaps = "dropped"`. In that version `granger_calendar` uses a month only
+  if every month its lags need was observed. With no gaps, `granger_calendar` matches
+  `lmtest::grangertest` exactly.
+
+### 7.2 Figures (`04a`, `04b`)
+
+- Each figure shows LOESS curves over the monthly points. The thesis's span of 0.08 is kept,
+  because a span is a fraction of the series and covers about two years at either frequency.
+- In Figure 10, the trend curve uses a span of 0.25 for both countries. The thesis used 0.3 for
+  China and 0.2 for the US.
+- **Figure 10's US series pools the President's documents and the briefings, each document
+  counted once.** The two corpora run at similar levels, except under Obama, when the briefings
+  are about .2 higher. Briefings nearly stop in 2018–20, so in those years the pooled series is
+  mostly the President. It is descriptive only; the tests use President ↔ MFA.
+- The rise in the briefings series in 2025 rests on the 57 briefings the American Presidency
+  Project has posted for that year (3.1).
+
+### 7.3 Monthly Granger tests (`05a`)
+
+All of these settings were fixed before the tests were run.
+
+- **Pairing:** President ↔ MFA, as in Figure 13. The windows start on January 1 of each year from
+  2002 to 2021 and run to December 2025, so the shortest window has 60 months.
+- **Stationarity:** an ADF test with a constant and the lag length chosen by AIC (up to 12) is run
+  on each full-sample series in levels. **If either series fails, both are differenced.** The
+  MFA series fails (τ = −0.90; 5% critical value −2.87). The President's passes (−6.47). So both
+  are differenced, in every window. The thesis differenced only the series that failed, which
+  meant the two directions of the test used different transformations.
+- **Lags:** 3, the setting of Figure 13, and 4, the lag that minimises the AIC of the bivariate
+  VAR over lags 1–12 on the full sample. The AIC lag is the less discretionary choice; the
+  thesis chose 3 after looking at the tables at lags 2 and 3.
+- F-tests, the same as `lmtest::grangertest` in the thesis.
+
+**Result: the thesis's finding does not replicate.**
+
+- **No window, direction, lag or score gives p < .05.** For China → US, the smallest p-value is
+  .23 (raw score, starting 2011, lag 3; .24 adjusted); for US → China it is .25 (adjusted, starting 2019, lag 4).
+- The thesis's p-values were as low as 10⁻⁷ for China → US, with US → China losing significance
+  after 2010. There is no sign of that asymmetry here.
+- The raw score gives the same picture as the adjusted one. So does leaving gaps missing: the
+  smallest p-value is then .095 (raw score, China → US).
+- Diagnostics run outside the script:
+  - **Levels do not rescue the result.** Lag-3 tests on undifferenced months give p ≥ .25 for
+    windows starting 2002, 2008 and 2012, and .064 (China → US) for the window starting 2016.
+  - **The month-to-month changes of the two series are correlated within the same month (r = .21),
+    but at ±1 to 3 months the cross-correlations are at most .14 in absolute value.** If the two
+    sides react to each other, or to the same events, they do it within a month, which a monthly
+    Granger test can't sequence.
+- **Possible reasons:**
+  - The new measure is aimed at the other country rather than at general tone.
+  - The old sentiment score was a hybrid of lexicon and classifier scores.
+  - The old tests were run in levels on gap-dropped weeks.
+  - Monthly changes have low reliability (about .35–.44; see 6.7 and 6.8), which biases any
+    cross-lag effect toward zero.
+
+  These have not been separated. The weekly version is 7.4.
+- The windows are nested and no correction is made for multiple tests. The table is descriptive.
+- Not checked: the `.tex` file has not been compiled, because no TeX distribution is installed
+  here.
+
+### 7.4 Weekly Granger tests (`05b`, Nov 8, 2026)
+
+The monthly changes move together within a month but not across months (7.3), so the tests are
+repeated with weeks. All settings were fixed before the tests were run.
+
+- **Weeks** run Monday to Sunday. Passages are averaged to documents, then to the week.
+- **A side's week is left missing if it has fewer than N documents. The main threshold is N = 2;
+  N = 1 and N = 3 are the checks.** One speech or press conference is a noisy reading of a week,
+  and two at least halve the sampling variance. N = 2 is also the most the data allow. Before 2011
+  the MFA held two press conferences a week, so N = 3 removes almost all of the MFA's weeks
+  before then. The President's median is one document a week.
+- **Missing weeks are not filled.** `granger_calendar` uses a week only if that week and every
+  week its lags need were observed on both sides. Interpolation would leak the following week's
+  value into the lags, and with this many gaps that leak would not be small.
+  - **The cost is sample size.** At lag 3, 325 of 1,212 weeks qualify at N = 1, 124 at N = 2 and
+    55 at N = 3.
+  - **At N = 2 and N = 3, almost all qualifying weeks fall after 2016**, so the windows starting
+    before 2017 barely differ from each other.
+- **First differences**, as for months: whether a series has a unit root doesn't depend on how often
+  it is sampled. A change is computed only between two adjacent observed weeks. Levels, the thesis's
+  weekly specification, are in the CSV.
+- **Lag 3 goes in the table; lags 1, 2 and 4 go in the CSV.** No AIC lag is chosen: with this many
+  gaps, too few rows are complete at long lags to compare lag orders.
+
+**Result: no stable lead in either direction.**
+
+- **The main specification (N = 2, lag 3, differences) is null in every window.** The smallest
+  p-value is .13.
+- **The significant results switch direction with the threshold and the lag**, so they do not show
+  that either side leads. The cells below are p-values for China → US / US → China, on the full
+  sample, adjusted score, differences:
+
+  | N | Lag 1 | Lag 2 | Lag 3 | Lag 4 |
+  |---|---|---|---|---|
+  | 1 | .034 / **.003** | .78 / .079 | **.038** / .29 | .43 / .10 |
+  | 2 | .079 / .90 | .46 / .68 | .48 / .13 | .93 / **.005** |
+  | 3 | .50 / .46 | .50 / **.004** | .65 / **.001** | .93 / .045 |
+
+  - N = 1 at lag 3 gives the thesis's direction (China → US) in most windows, with p from .006
+    to .04.
+  - At lag 1, N = 1 gives the opposite direction.
+  - N = 3 gives US → China on 55 weeks.
+  - The raw score shows the same pattern.
+- **Levels reproduce the thesis's kind of result.** At N = 1, China → US reaches p ≈ 10⁻¹⁰ (lag 1).
+  But the MFA series has a unit root, so F-tests in levels do not follow their textbook
+  distribution (Toda and Phillips 1993). And the result does not survive differencing.
+- **A plausible reason China → US appears at N = 1: the US series is the noisier one.** 35% of the
+  President's observed weeks rest on a single document, against 12% of the MFA's. When a
+  series is measured with error, its own lags control poorly for its past. Lags of a cleaner,
+  correlated series can then pick up the slack and appear to lead it (6.7). This has not been
+  tested.
+- **Reading for the paper:**
+  - Neither the monthly tests nor the pre-specified weekly test find a lead in either direction.
+  - The weekly results that are significant depend on N and the lag, and point both ways.
+  - This is a robust null on the question of who leads, not evidence that China leads.
+  - The thesis's result is consistent with levels on gap-dropped weeks.
 
 ---
 
