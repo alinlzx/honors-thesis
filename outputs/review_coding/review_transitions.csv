@@ -1,0 +1,16 @@
+"source","transition","rows"
+"briefings","no/blank -> yes/neg",1
+"briefings","yes/mixed -> yes/neg",1
+"mfa","yes/mixed -> yes/neutral",1
+"mfa","yes/neg -> no/blank",7
+"mfa","yes/neg -> yes/neutral",1
+"mfa","yes/neutral -> no/blank",5
+"mfa","yes/neutral -> yes/neg",1
+"mfa","yes/pos -> no/blank",3
+"mfa","yes/pos -> yes/neutral",4
+"presdocs","no/blank -> yes/neg",1
+"presdocs","yes/neg -> yes/neutral",3
+"presdocs","yes/neutral -> no/blank",5
+"presdocs","yes/neutral -> yes/pos",1
+"presdocs","yes/pos -> no/blank",2
+"presdocs","yes/pos -> yes/neutral",5
