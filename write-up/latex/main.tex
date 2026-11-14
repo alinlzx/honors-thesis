@@ -176,6 +176,35 @@ Given the fact that the White House holds the reins of foreign policy, whereas C
 \section{Methodology}
 \label{sec:methods}
 
+\subsection{Extracting a Country's Latent Posture from Rhetoric}
+
+For each document $d$ in country $c$ mentioning its counterpart $c'$, issued by speaker or data source $k(d)$ in period $t(d)$, it is possible to represent the sentiment of $d$ as a function of three variables: (1) $c$'s latent posture towards $c'$ in period $t(d)$ denoted by $\theta_{c,t(d)}$, (2) some time-invarying speaker or source effect $\alpha_{k(d)}$, and (3)a random error term, $\varepsilon_{d}$: 
+
+\begin{align*}
+  y_d = \theta_{c,t(d)} + \alpha_{k(d)} + \varepsilon_d 
+\end{align*}
+
+$\alpha_{k(d)}$ captures the idiosyncratic posture of the speaker, the style of the data source, or any systematic bias a sentiment classifier has towards a particular text genre. 
+
+Taking the average sentiments across all $n_{c,t}$ documents within a period $t$ yields the following expression: 
+
+\begin{align}
+  \bar y_{c,t} = \theta_{c,t} + \underbrace{\sum_k w_{k,t}\,\alpha_k}_{\text{doc composition}} + \bar\varepsilon_{c,t},
+\qquad w_{k,t} = n_{k,t}/n_{c,t}.
+\end{align}
+
+This paper aims to estimate $\theta_{c,t}$ across successive weeks or months by averaging the sentiment scores of all relevant documents within that time period. It will then construct a time series $\{\theta_{c,t}\}_{t=1}^T$ for each country $c$ and examine whether the Chinese time series reacts to the US time series, or vice versa.
+
+Thus, it may be advisable to subtract out the document composition term from the average sentiment. This ensures that the estimates of $\theta_{c,t}$ are not confounded by a change in document genre or speaker composition. For example, a sudden influx of documents from \emph{People's Daily} around 2007, as observed in \Cref{fig:china-doc-freq}, might skew the average sentiment even when China's latent posture remains unchanged. An adjusted average sentiment $\tilde y_{c,t}$ can be represented as follows:
+
+\begin{align}
+  \tilde y_{c,t} = \bar y_{c,t} - \sum_k w_{k,t}\hat\alpha_k
+\end{align}
+
+However, two considerations moderate the usefulness of $\tilde y_{c,t}$. First, speaker or source effects are not always salient if most or all documents in $t$ are issued by the same speaker or source. Moreover, these effects may be endogenous to posture. A more hawkish Chinese posture towards the US, for instance, can manifest as more frequent podium appearances of ``Wolf Warrior'' spokespeople like Zhao Lijian or Hua Chunying. 
+
+My analyses finds that subtracting out the document composition term does not significantly move average sentiments over time, as illustrated in [[TODO: add appendix figure]]. The Granger causality test results are robust to either time series construction. For the sake of simplicity, this paper will present results using $\bar y_{c,t}$.
+
 \subsection{Refining the Research Question}
 
 Given the thematic diversity and volatility of the US and Chinese foreign policy discursive landscape, it would be overly reductive to crowd all textual data from the US and China into just two time series. As such, the central research question must be broken down into two more manageable components.
