@@ -1,0 +1,6 @@
+# Build with XeLaTeX (needed for xeCJK and system fonts) and biber.
+$pdf_mode = 5;
+$bibtex_use = 2;
+$aux_dir = 'build';
+$out_dir = '.';
+@default_files = ('main.tex');

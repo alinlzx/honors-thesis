@@ -154,10 +154,26 @@ text width), class colors and the evaluation-set loader.
 |---|---|---|
 | `06_sentiment_stats.R` | Figure 6 (plus statistics quoted in the Figs 7–8 text) | `06_sentiment_stats.tex`, `06_sentiment_stats_preview.pdf` |
 | `07_08_confusion_roc.R` | Figures 7 (China) and 8 (US) | `07_china_roc.pdf`, `07_china_confusion.pdf`, `08_us_roc.pdf`, `08_us_confusion.pdf` |
+| `02_03_04_document_counts.R` | Figures 2 (US by archive), 3 (China) and 4 (all corpora) | `02_us_doc_frequency.pdf`, `03_china_doc_frequency.pdf`, `04_data_composition.pdf` |
+| `09_10_sentiment_over_time.R` | Figures 9 (by corpus) and 10 (by country) | `09_sentiment_by_source.pdf`, `10_sentiment_by_country.pdf` |
+| `12_28_granger_tree.R` | Figures 12 (tree of Granger specifications) and 28 (the tree with each test's result) | `12_granger_tree.pdf`, `28_granger_tree_findings.pdf` |
+| `13_14_24_25_granger_tables.R` | Figures 13 (MFA vs Presidential), 14 (full data), 24 (by topic) and 25 (by topic, after 2015) | `13_granger_mfa_presidential.tex`, `14_granger_full_data.tex`, `24_granger_topics_full.tex`, `25_granger_topics_2015.tex`, `13_14_24_25_granger_preview.pdf` |
+| `15_16_17_18_19_topics.R` | Figures 15 (US) and 16 (China) topic counts, 17 (China periphery), 18 (US) and 19 (China) topic sentiment | `15_us_topic_counts.pdf`, `16_china_topic_counts.pdf`, `17_china_periphery_sentiment.pdf`, `18_us_topic_sentiment.pdf`, `19_china_topic_sentiment.pdf` |
+| `20_21_22_23_topic_us_china.R` | Figures 20 (trade), 21 (multilateral), 22 (Taiwan), 23 (domestic periphery) | `20_trade_sentiment.pdf`, `21_multilateral_sentiment.pdf`, `22_taiwan_sentiment.pdf`, `23_periphery_sentiment.pdf` |
+| `26_27_valence_shares.R` | Figures 26 (positive) and 27 (negative) | `26_positive_doc_share.pdf`, `27_negative_doc_share.pdf` |
+| `29_event_map.R` | Figure 29 (events along the four corpus series) | `29_event_map.pdf` |
 
 ```bash
 Rscript figures/06_sentiment_stats.R
 Rscript figures/07_08_confusion_roc.R
+Rscript figures/02_03_04_document_counts.R
+Rscript figures/09_10_sentiment_over_time.R
+Rscript figures/12_28_granger_tree.R
+Rscript figures/13_14_24_25_granger_tables.R
+Rscript figures/15_16_17_18_19_topics.R
+Rscript figures/20_21_22_23_topic_us_china.R
+Rscript figures/26_27_valence_shares.R
+Rscript figures/29_event_map.R
 ```
 
 - **Table (Fig 6).** A booktabs/threeparttable fragment for `\input{}`.
@@ -171,3 +187,44 @@ Rscript figures/07_08_confusion_roc.R
   - Accuracies match exactly.
   - AUCs can differ by up to 0.002, because the loader rounds hybrid scores to 10 decimals. A few documents have identical SVM, RF and Bing scores but hybrid scores that differ by about 1e-17, and the rounding makes them ties.
   - The values agree at the two decimals that are printed.
+
+**Time-series exhibits (Figs 2–4, 9–10, 12–29).** All read the `05_*_scored.csv`
+exports through `read_documents()` in `figures/setup.R`, and follow
+`time_series_analysis.Rmd` and `sentiment analysis & EDA.Rmd`. The series are
+built the same way: weeks counted from 2000-01-01, calendar months, LOESS spans
+as in the 2023 code, the topic keywords verbatim, and the ±0.1 SD valence cutoffs.
+- **Which score.** `SCORE_VERSION` in `setup.R` (default `a2`, the best performer in
+  Fig 6; or set the env var `THESIS_SCORE_VERSION=a1`). The thesis series used the
+  archived `*_Senti.xlsx`, whose SVM/RF labels are binary, so they correspond to
+  approach 1. The exhibits in `figures/output/` are drawn with approach 2.
+- **Text for topic filters.** The topic filters run on the exact 2023 text, taken from
+  `00_corpora.csv`. For People's Daily, `cleaned_text` in the 05 export differs in
+  32% of rows (escaped carriage returns).
+- **Added to every line plot.** A faint dot for each document (date × hybrid score).
+  The y-axis is cut at ±2, which hides 0.4–2% of dots; the curves are fit on all the data.
+  Figs 26–27 plot monthly shares, so their dots are the monthly shares.
+- **Departures from the thesis plots (formatting only).**
+  - Fig 3 drops the gray "other documents" bars: the full MFA and People's Daily corpora are not in the data folder.
+  - Figs 3–4 use quarterly bars, not 100 histogram bins.
+  - Fig 2 keeps the thesis's title-keyword archive labels. The 104 Presidential Library documents that fall under "CRS Reports & Others" are CRS reports, so the label is right.
+  - Fig 4 labels each document by the corpus it came from. The thesis reused the Fig 2 labels, which put those 104 CRS reports under Congress.
+  - Fig 9 has one panel per corpus, with the other curves in gray.
+  - Fig 17 is two stacked panels instead of a dual y-axis.
+  - Figs 18–19 have one panel per topic plus an all-topics panel.
+  - Figs 15–16 set smoothed counts below zero to zero, and stack topics in the same order.
+- **Granger tables (Figs 13–14, 24–25).** `granger_p()` in `setup.R`, the same procedure as `get_gct_pvalue()`: inner join of the two series, periods strictly after the start date, `lmtest::grangertest(order = 3)` both ways.
+  - Figs 13–14 are weekly; start dates are 1 January 2002–2020. Fig 13 uses all dated MFA and Presidential documents; Fig 14 the full country series.
+  - Figs 24–25 are monthly topic series, after 1 January 2002 (the full overlap, since MFA begins in October 2002) and after 1 January 2015.
+  - `grangertest()` drops rows with a missing value before lagging, so lags run across empty weeks or months, as in the 2023 code. This is a methodological issue for the other branch, not changed here.
+  - Cells are bold at p < 0.05 (the thesis used green). Exact p-values do not match the thesis (see the headline Granger notes above). Under approach 2 (the exported tables), US as response is significant in 18 of 19 windows in both Figs 13 and 14 (all but the post-2020 window). China as response is significant only for the 2019 start in Fig 13, and for 2002–2007 starts in Fig 14. By topic: full data, only trade (US as response, p = 0.043); after 2015, trade (US as response, 0.013), multilateral (US as response, 0.043) and Russia (both ways: US 0.045, China 0.027). Under approach 1, China as response was significant for 2002–2006 starts in Fig 13 and never in Fig 14; by topic, domestic periphery (full data) and trade (after 2015), both with US as response.
+- **Granger tree (Figs 12, 28).** Drawn in R (inches, 1:1) instead of the thesis's illustrated flowchart: filter → data → time series → Granger test. Dark nodes were run; dashed outlines were not (topic and polarity series only from the full data, by month, as in the thesis). The thesis's backward-dating windows are struck out: they are not part of the rebuilt analysis (approach 2: almost nothing significant, in line with the thesis's "rarely meaningful").
+  - Fig 28 adds a result layer computed in the script, so it follows `SCORE_VERSION`: one cell per test, coloured by which response is significant at p < 0.05 (US, China, both, neither).
+  - Topic cells repeat Figs 24–25 (all months, after 2015). Time cells are the 19 forward-dating windows, weekly (Figs 13–14) and monthly (same procedure by calendar month).
+  - Polarity tests follow `posneg()` + `stationary_df()`: monthly counts of documents beyond mean ± 0.1 SD, first-differenced, 2 lags (the Rmd's `order = 2`), for all months and after 2015. Approach 2: positive, US as response (p = 0.023 all months; 0.015 after 2015); negative, China as response (0.037; 0.019). The negative result is significant only at 2 lags (3–5 lags: p = 0.09–0.20). Under approach 1 neither polarity is significant over all months; negative is China as response after 2015 (0.049).
+  - Lag orders 1–5 (exploratory, weekly forward dating): US as response is significant in 15–18 of 19 windows at every lag, for both MFA/Presidential and full data. China as response for the 2002–2007 starts (full data) holds at lags 2–4 only.
+- **Fig 29.** The curves are Fig 9's (weekly means per corpus, LOESS 0.08, every dated document) on one panel.
+  - The thesis annotated the plot by hand outside R. Here the annotations are drawn in R: leader bands above the panel (US presidents from Bush; CCP general secretaries from Hu, as in the thesis), dotted lines at the seven thesis events on their actual dates, and trade-war shading from the Section 301 memorandum (22 March 2018) to the end of the data.
+  - The 2023 code's commented-out `geom_vline()` dates were approximate (e.g. 2011-05-01 for Hu's January 2011 state visit). The event table at the top of the script holds the dates and labels; edit it there.
+  - No per-document dots by default: on one panel they need the ±2 axis and flatten the curves. `SHOW_DOTS <- TRUE` adds them.
+- **Labels avoid hyphens.** R's `pdf()` draws "-" as a minus sign, and cairo is not available on this machine (no XQuartz).
+

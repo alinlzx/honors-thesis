@@ -21,3 +21,9 @@ The goal should be to produce a viable writing sample for a poli sci phd program
 The data corresponding to this branch are located outside of this directory, under `Personal Projects/honors-thesis-original-data`. 
 
 The `raw` folder contains raw documents. The `sentiments` folder contains documents with multiple types of sentiment scores, along with miscellaneous files created during analyses. 
+
+### Figure replication
+
+When replication figures, feel free to take creative liberties with formatting, but adhere to the data cleaning and processing steps as laid out in existing code or in the paper as closely as possible. If possible, export tables as tex files and charts as pdfs. This allows all figures to be easily and directly inserted into a new paper draft. 
+
+The `figures` folder should contain all scripts generating figures for the replicated paper. There should ideally be one script per class of figures. Files are to be numbered corresponding to the two digit figure number. For example, the replication of figure 6 should be saved to 06_sentiment_stats.tex. 
