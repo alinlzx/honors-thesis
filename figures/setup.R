@@ -172,16 +172,68 @@ topic_docs <- function(country_docs, t) {
 # senti) are inner-joined by period, cut to periods strictly after `after`, and tested
 # both ways with lmtest::grangertest(). "US as response" is grangertest(us ~ china).
 # Rows with a missing value are dropped before lagging (model.frame() default), so
-# lags run across gaps, as in the 2023 code.
+# lags run across gaps, as in the 2023 code. `method` comes from the stationarity rule
+# below.
 weekly_series <- function(d) group_week(d) %>% transmute(period = week, senti = mean_sentiment)
 monthly_series <- function(d) group_month(d) %>% transmute(period = month, senti = mean_sentiment)
-granger_p <- function(us, china, after = as.Date("1900-01-01"), order = 3) {
+# Stationarity rule (added in the rebuild; the 2023 code tested every series in levels):
+#   - ADF with constant and trend, k = trunc((n - 1)^(1/3)) lagged differences (the
+#     regression of tseries::adf.test, via urca::ur.df), 5% level;
+#   - each series is tested as it enters the full-sample test (the inner-joined pair over
+#     all periods), and the decision is kept for every start-date window;
+#   - both series reject a unit root -> F-test in levels (as before);
+#     neither does                    -> F-test on the first differences of both;
+#     only one does (mixed orders)    -> Toda-Yamamoto: both series in levels with
+#        order + 1 lags of each, Wald test (F form) on the first `order` lags of the
+#        other series only (the extra lag absorbs the unit root and is not tested).
+adf_unit_root <- function(x) {   # TRUE if ADF cannot reject a unit root at 5%
+  x <- x[!is.na(x)]
+  a <- urca::ur.df(x, type = "trend", lags = trunc((length(x) - 1)^(1/3)), selectlags = "Fixed")
+  a@teststat[1, "tau3"] >= a@cval["tau3", "5pct"]
+}
+GRANGER_METHODS <- c(levels = "Levels", differences = "First differences", toda_yamamoto = "Toda-Yamamoto")
+stationarity_method <- function(us, china) {
+  d <- inner_join(us, china, by = "period", suffix = c("_us", "_ch")) %>%
+    filter(!is.na(senti_us), !is.na(senti_ch))
+  unit_root <- c(adf_unit_root(d$senti_us), adf_unit_root(d$senti_ch))
+  if (!any(unit_root)) "levels" else if (all(unit_root)) "differences" else "toda_yamamoto"
+}
+# Toda-Yamamoto p-value for "x Granger-causes y": y on a constant and order + dmax lags of
+# y and x; Wald test that the first `order` lags of x are all zero, in its F form
+# (W / order against F(order, residual df)), so it is on the same footing as the
+# grangertest() F-tests and more cautious than the chi-square form in short series.
+toda_yamamoto_p <- function(y, x, order, dmax = 1) {
+  m <- order + dmax
+  e <- embed(cbind(y, x), m + 1)            # columns: y_t, x_t, y_t-1, x_t-1, ...
+  y_lags <- e[, seq(3, by = 2, length.out = m), drop = FALSE]
+  x_lags <- e[, seq(4, by = 2, length.out = m), drop = FALSE]
+  fit <- lm(e[, 1] ~ y_lags + x_lags)
+  idx <- paste0("x_lags", seq_len(order))
+  b <- coef(fit)[idx]
+  w <- as.numeric(t(b) %*% solve(vcov(fit)[idx, idx], b))
+  pf(w / order, order, fit$df.residual, lower.tail = FALSE)
+}
+granger_p <- function(us, china, after = as.Date("1900-01-01"), order = 3, method = "levels") {
   d <- inner_join(us, china, by = "period", suffix = c("_us", "_ch")) %>% filter(period > after)
   d <- transmute(d, us_senti = senti_us, ch_senti = senti_ch)
+  n <- sum(complete.cases(d))
+  if (method == "toda_yamamoto") {
+    d <- d[complete.cases(d), ]
+    return(tibble(us_response = toda_yamamoto_p(d$us_senti, d$ch_senti, order),
+                  china_response = toda_yamamoto_p(d$ch_senti, d$us_senti, order), n = n, method = method))
+  }
+  if (method == "differences") {
+    d <- d[complete.cases(d), ]
+    d <- tibble(us_senti = diff(d$us_senti), ch_senti = diff(d$ch_senti))
+  }
   us_resp <- lmtest::grangertest(us_senti ~ ch_senti, data = d, order = order)
   ch_resp <- lmtest::grangertest(ch_senti ~ us_senti, data = d, order = order)
-  tibble(us_response = us_resp$`Pr(>F)`[2], china_response = ch_resp$`Pr(>F)`[2],
-         n = sum(complete.cases(d)))
+  tibble(us_response = us_resp$`Pr(>F)`[2], china_response = ch_resp$`Pr(>F)`[2], n = n, method = method)
+}
+# The stationarity rule applied to one pair across start dates.
+granger_by_start <- function(us, china, starts, order = 3) {
+  method <- stationarity_method(us, china)
+  bind_rows(lapply(starts, function(s) granger_p(us, china, s, order, method) %>% mutate(start = s)))
 }
 GRANGER_OUTCOMES <- c(us = "US as response", china = "China as response", both = "Both", neither = "Neither")
 granger_outcome <- function(us_p, china_p, alpha = 0.05) {

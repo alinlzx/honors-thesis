@@ -182,19 +182,22 @@ print(as.data.frame(alpha %>% filter(version == "a2", method != "week") %>%
 
 # ---- Figure: raw vs adjusted monthly series (approach 2, full data, twfe) ---------------------------
 d2 <- res[[which(VERSIONS == "a2")]]$docs$full
-plot_df <- bind_rows(lapply(c("raw", "twfe", "naive"), function(m) bind_rows(
+# The no-time-FE variant is left out: it strips genuine posture change along with
+# speaker effects (see the header), so it is not a meaningful adjusted series.
+FIG_METHODS <- c(raw = "Observed monthly mean", twfe = "Net of speaker effects")
+plot_df <- bind_rows(lapply(names(FIG_METHODS), function(m) bind_rows(
   monthly_series(adjust(d2$us, m)) %>% mutate(country = "US on China"),
   monthly_series(adjust(d2$ch, m)) %>% mutate(country = "China on the US")) %>% mutate(method = m))) %>%
-  mutate(method = factor(c(raw = "Observed", twfe = "Speaker FE (with month FE)", naive = "Speaker FE (no time FE)")[method],
-                         levels = c("Observed", "Speaker FE (with month FE)", "Speaker FE (no time FE)")))
+  mutate(method = factor(FIG_METHODS[method], levels = FIG_METHODS),
+         country = factor(country, levels = c("China on the US", "US on China")))
 curves <- plot_df %>% group_by(country, method) %>%
   group_modify(~ loess_curve(.x, "period", "senti", span = 0.15)) %>% ungroup()
 fig <- ggplot(curves, aes(date, fit, colour = method, linetype = method)) +
   geom_hline(yintercept = 0, colour = "grey70", linewidth = 0.3) +
   geom_line(linewidth = 0.6) +
   facet_wrap(~country, ncol = 1) +
-  scale_colour_manual(values = c("black", "#2166AC", "#B2182B")) +
-  scale_linetype_manual(values = c("solid", "dashed", "dotted")) +
+  scale_colour_manual(values = c("black", "#2166AC")) +
+  scale_linetype_manual(values = c("solid", "dashed")) +
   scale_x_years() + ylab("Monthly mean hybrid score (LOESS)") + theme_paper()
 save_fig("speaker_fe_series.pdf", fig, height = 4.5)   # writes to figures/output; move below
 file.rename(fig_path("speaker_fe_series.pdf"), file.path(OUT, "speaker_fe_series.pdf"))

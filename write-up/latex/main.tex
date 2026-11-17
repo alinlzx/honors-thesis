@@ -1,6 +1,10 @@
-% !TEX program = xelatex
+% !LW recipe = latexmk (latexmkrc)
 % Writing sample ported from write-up/Thesis Abridged.docx.
 % Build: latexmk (see latexmkrc), or xelatex -> biber -> xelatex x2.
+% (The line above makes VS Code's LaTeX Workshop build with latexmk + latexmkrc, so
+% biber runs and aux files go to build/. Do not use "% !TEX program = xelatex": it
+% makes LaTeX Workshop run a single xelatex pass, which leaves citations and new
+% cross-references undefined.)
 %
 % Conventions used in this file:
 %   \todo{...}      visible red note for something to fix before submission;
@@ -35,6 +39,18 @@
 \usepackage{threeparttable}
 \usepackage[font=small,labelfont=bf,skip=6pt]{caption}
 \usepackage{float}
+\usepackage[section]{placeins}  % floats never drift past the end of their section
+% Float placement: LaTeX's defaults (a float may fill at most 70% of a text page, at
+% least 20% of a page must be text, a float-only page must be 50% full) push mid-sized
+% figures off the page that cites them. Relax them so a figure lands where it is cited
+% when it fits, and otherwise at the top of the next page.
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.8}
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{4}
 
 % ---------- Headings ----------
 \usepackage{titlesec}
@@ -80,32 +96,28 @@
 
 \begin{abstract}
 \noindent
-As tensions continue to rise between China and the US, much of the constructive dialogue has been crowded out by virulent insult-hurling from both sides. This paper seeks to explore the patterns of interaction between US and Chinese foreign policy discourse in the context of this trend. Specifically, it applies data-driven methodologies to investigate whether Chinese political discourse vis-à-vis the US is reactive to US rhetoric about China---and vice versa---between 2002 and 2022.
+As tensions continue to rise between China and the US, constructive dialogue has been crowded out by tit-for-tat recriminations. This paper seeks to explore the patterns of interaction between US and Chinese foreign policy discourse in the context of this trend. Specifically, it applies data-driven methods to investigate whether Chinese political discourse vis-à-vis the US is reactive to US rhetoric about China---and vice versa---between 2002 and 2021.
 
-Chinese Ministry of Foreign Affairs press conference transcripts compiled by Mochtak and Turcsanyi, as well as \emph{People's Daily} publications collected by Fisher et al., are paired with an original dataset with over 35,000 US documents mentioning China from the Presidential Library and Congressional databases. These textual data are then quantified based on sentiments by both lexicon dictionaries and machine learning models. The computed sentiments are subsequently transformed into a time series dyad representing the discursive tones of the US and China, and their propensity to forecast one another are then examined via Granger causality tests.
+I pair Chinese Ministry of Foreign Affairs press conference transcripts and \emph{People's Daily} publications with over 35,000 US documents mentioning China from the Presidential Library and Congressional databases. Lexicon-based and supervised machine learning models then classify the sentiments of these texts. Subsequently, I construct time series of locally averaged sentiments and apply Granger causality tests to determine whether one country's discursive patterns can predict those of its counterpart. 
 
-This paper finds strong evidence for unidirectional Granger causality with US data as a response, indicating that China seems to initiate rhetorical reconciliation and hostilities more often, while the US plays a more reactive role in bilateral discourse. By analyzing discursive tones as a function of time, this paper offers the ``proof of concept'' for a cost-efficient way to measure the temperature of bilateral ties on both global and local scales. A robust US-China relations thermometer can in turn be helpful in piercing the veil of perceptual uncertainties.
+This paper finds consistent evidence for unidirectional Granger causality with US data as a response, indicating that China seems to initiate rhetorical reconciliation and hostilities more often, while the US plays a more reactive role in bilateral discourse. 
 \end{abstract}
 
 % =====================================================================
-\section{Chilly Summit in Alaska: US-China Relations at a Perilous Crossroads}
+\section{US-China Relations at a Crossroads}
 \label{sec:intro}
 
-As the geopolitical fault lines between the US and China harden, their fraught bilateral relations have become increasingly defined by poisonous accusations and nationalist vitriol. Rhetoric, in many ways, can push bilateral relations towards very different paths.
+As the geopolitical fault lines between the US and China harden, their bilateral relations have become increasingly defined by mutual accusations and vitriol. Whereas good-faith dialogue takes the edge off rising tensions and lays the groundwork for more constructive diplomatic engagement (as was the purpose of the Bush-era Strategic Economic Dialogue and its Obama-era successor, the Strategic and Economic Dialogue), tit-for-tat rhetorical jousting erodes trust and engenders a cycle of aggressive posturing. The hostile rhetoric that dominated the high-level Anchorage summit in 2021, as well as outbursts from ``Wolf Warrior'' diplomats, demonstrates the corrosive effects of virulent dialogue.
 
-Whereas good-faith dialogue takes the edge off of rising tensions and lays the groundwork for more constructive engagement (as was the purpose of the Bush- and Obama-era Strategic and Economic Dialogues), tit-for-tat rhetorical jousting erodes trust and engenders a vicious circle of aggressive posturing. The shouting match that dominated the high-level Anchorage summit in 2021, as well as outbursts from so-called ``Wolf Warrior'' diplomats on press conference podiums and on social media feeds, demonstrates the corrosive effects of virulent dialogue.
+Given that words can make or break bilateral relations, being able to effectively parse, understand, and even forecast how Beijing speaks about the US is a central priority for scholars of US-China relations. A wide body of literature has explored various elements of China's foreign policy discourse, ranging from motifs like ``tianxia'' (天下), to how historical grievance animates language, to Hu Jintao's mantras ``harmonious society'' and ``harmonious world,'' to the ubiquitous Xi-era slogan ``community of common destiny,'' to the ``Wolf Warrior'' phenomenon \autocites{callahan2007}{zheng2007}{wang2014}{sullivan2023}.
 
-Given that words can make or break bilateral relations, being able to effectively parse, understand, and even forecast how Beijing speaks about the US is a central prerogative for scholars of US-China relations. In fact, a wide corpus of literature have explored variegated elements of China's foreign policy discourse, ranging from motifs like ``tianxia'' (天下), to how historical grievance animates language, to Hu Jintao's mantra ``harmonious society,'' to the ubiquitous Xi-era slogan ``community of common destiny,'' to the ``Wolf Warrior'' phenomenon \autocites{callahan2007}{zheng2007}{wang2014}{sullivan2023}.
+However, existing research faces two important limitations. First, it rarely traces Chinese rhetoric as a product of interaction with---or a response to---American foreign policy discourse over an extended time frame.\footnote{Some studies do examine discursive interactions within particular time periods or issue areas; see, e.g., \textcite[295]{jaworsky2021}.} Indeed, discourse does not materialize in a vacuum, but is rather a series of stimuli and responses that are shaped and reshaped through an iterative, interactive process. What's more, researchers often have to concentrate their analysis on just a few texts, making it difficult to glean insights about more holistic trends within the US-China discursive landscape, which encompasses hundreds of thousands of texts churned out over multiple decades.\footnote{Nevertheless, some quantitative papers that look at larger pools of foreign policy discourse do exist and prove helpful. See \textcite{mokry2024}.}
 
-However, existing research faces two important limitations. First, it does not frequently trace Chinese rhetoric as a product of interaction with---or a response to---American foreign policy discourse over an extended time frame.\footnote{Though some studies do look at discursive interactions within particular time periods or issue areas; see \textcite[295]{jaworsky2021}.} Indeed, discourse does not materialize from a vacuum, but is rather a series of stimuli and responses that are shaped and reshaped through an iterative, interactive process. What's more, researchers often have to concentrate their analysis on just a few texts, making it difficult to glean insights about more holistic trends within the US-China discursive landscape, which encompasses hundreds of thousands of texts churned out over multiple decades.\footnote{Nevertheless, some quantitative papers that look at larger pools of foreign policy discourse do exist and prove helpful. See \textcite{mokry2024}.}
-
-My paper attempts to partially address these limitations by exploring how American foreign policy discourse vis-à-vis China interacts and correlates with Chinese discourse about the US. To ensure that I survey adequately large corpora of documents spanning the past two decades from both the US and China, this paper also opts to tread the quantitative path by synthesizing time series analysis and natural language processing (NLP) techniques.
-
-More specifically, I postulate whether it is possible to pinpoint a ``trend-setter'' and a ``trend-reactor'' in the sentiments of US and Chinese government (and media) discourses vis-à-vis each other. If so, who more often plays the role of the sentiment ``trend-setter,'' and who plays the role of the ``trend-reactor?''
+My paper attempts to partially address these limitations by exploring how American foreign policy discourse vis-à-vis China interacts and correlates with Chinese discourse about the US. More specifically, I ask whether it is possible to pinpoint a ``trend-setter'' and a ``trend-reactor'' in the sentiments of US and Chinese government (and media) discourses vis-à-vis each other. If so, who more often plays the role of the sentiment ``trend-setter,'' and who plays the role of the ``trend-reactor''?
 
 % PORT: Figure 1 (hypothesized interaction patterns) was cut; the closing
 % parenthetical "(as illustrated in Figure 1)" was removed from this paragraph.
-To situate this research query within a quantitative space, I aim to transform vast corpora of US and Chinese foreign policy discourse into sentiment ``scores'' over time. In other words, every relevant text will be assigned a numerical score that places the sentiment (or tone) of said text along a linear spectrum ranging from negative to positive. These numeric proxies for sentiment would then be aggregated and smoothed to create time series. Subsequently, I examine whether there exists a ``lagged correlation'' between the sentiment time series corresponding to US and Chinese rhetoric.
+To situate this research query within a quantitative space, I aim to transform vast corpora of US and Chinese foreign policy discourse into sentiment ``scores'' over time. In other words, every relevant text is assigned a numerical score that places its sentiment (or tone) along a linear spectrum ranging from negative to positive. These numeric proxies for sentiment are then averaged to create time series. Subsequently, I examine whether there exists a ``lagged correlation'' between the sentiment time series corresponding to US and Chinese rhetoric.
 
 % =====================================================================
 \section{Data}
@@ -116,21 +128,19 @@ To situate this research query within a quantitative space, I aim to transform v
 
 \subsection{Data Collection}
 
-This paper aims to collect and consolidate a corpus of documents---including press conference transcripts, speeches from policymakers, white papers, policy briefs, or any other entries within government archives---that adequately represents China's political discourse vis-à-vis the US, as well as the US's rhetoric towards China.
-
 \subsubsection*{Chinese Data}
 
-Fortunately, data on Chinese foreign policy discourse came ready-made. Mochtak and Turcsanyi curated the impressive Chinese Ministry of Foreign Affairs Press Conferences Corpus. This dataset contains roughly 23,000 question-answer dyads, ranging from October 2002 to December 2021, that were extracted from press conference transcripts published on the MFA's English website \autocite{mochtak2022data}.
+Data on Chinese foreign policy discourse came ready-made. Mochtak and Turcsanyi curated the Chinese Ministry of Foreign Affairs Press Conferences Corpus. This dataset contains roughly 23,000 question-answer dyads, ranging from October 2002 to December 2021, that were extracted from press conference transcripts published on the MFA's English website \autocite{mochtak2022data}.
 
-A vast collection of English \emph{People's Daily} publications, generously provided by Fisher and Klein through the FOCUSdata project, supplemented the MFA corpus to round out my Chinese foreign policy dataset. The \emph{People's Daily} corpus captures a staggering 190,000 articles ranging from June 2007 to February 2020 \autocite{fisher2022data}.\footnote{For more details on how the FOCUSdata project collected its vast datasets, and how it conducted preliminary sentiment analysis, see \textcite{fisher2022focus}.}
+A vast collection of English \emph{People's Daily} publications, provided by Fisher and Klein through the FOCUSdata project, supplemented the MFA corpus to round out my Chinese foreign policy dataset. The \emph{People's Daily} corpus captures 190,000 articles ranging from May 2007 to December 2020 \autocite{fisher2022data}.\footnote{For more details on how the FOCUSdata project collected its vast datasets, and how it conducted preliminary sentiment analysis, see \textcite{fisher2022focus}.}
 
 \subsubsection*{US Data}
 
-Surprisingly, pre-existing datasets that trace US foreign policy rhetoric are scant, if they exist at all. This means that an original data collection endeavor is warranted. In order to maximize congruence between the China and US data, the intuitive source of documents here would have been State Department press releases. However, these transcripts are scattered across multiple archived websites with non-uniform interfaces corresponding to the Clinton, Bush, Obama, and Trump presidencies. Navigating this sort of digital environment with an automated scraper to gather China-related statements would have been particularly cumbersome. Thus, this paper instead chose to take advantage of HeinOnline's diverse array of federal government databases.
+Pre-existing datasets that trace US foreign policy rhetoric are scant, if they exist at all. This means that an original data collection endeavor is warranted. In order to maximize congruence between the China and US data, the intuitive source of documents here would have been State Department press releases. However, these transcripts are scattered across multiple archived websites with non-uniform interfaces corresponding to the Clinton, Bush, Obama, and Trump presidencies. I therefore drew instead on HeinOnline's federal government databases.
 
 % PORT: "HeinOnline's Congressional compiled another dataset" -> added the missing
 % "Documents database and".
-Using a custom scraper powered by the Selenium chromedriver, I compiled any documents that included the named entities ``China,'' ``Chinese,'' ``CCP,'' and ``PRC'' within HeinOnline's Presidential Libraries since 2000 \autocite{heinPresidential}. The custom dataset pooled together roughly 4,800 entries sourced from the Daily Compilation of Presidential Documents and the Public Papers of five administrations, almost all of which are transcripts of the President's public statements. A similar scraper scavenged HeinOnline's Congressional Documents database and compiled another dataset totaling nearly 30,300 documents, which are all primarily sourced from Congressional Research Service reports, as well as roughly fourteen volumes of Congressional Records detailing everyday activities on the Senate and House floors \autocite{heinCongress}.
+Using a custom scraper built on Selenium ChromeDriver, I compiled all documents that included the named entities ``China,'' ``Chinese,'' ``CCP,'' and ``PRC'' within HeinOnline's Presidential Libraries since 2000 \autocite{heinPresidential}. The custom dataset pooled together roughly 4,800 entries sourced from the Daily Compilation of Presidential Documents and the Public Papers of five administrations, almost all of which are transcripts of the President's public statements. A similar scraper searched HeinOnline's Congressional Documents database and compiled another dataset totaling nearly 30,300 documents, drawn primarily from Congressional Research Service (CRS) reports and roughly fourteen volumes of the \emph{Congressional Record}, which documents daily proceedings on the Senate and House floors \autocite{heinCongress}.
 
 % PORT: this heading read "Data Collection" (a duplicate) in the .docx; the full
 % thesis calls this subsection "Data Cleaning".
@@ -138,13 +148,13 @@ Using a custom scraper powered by the Selenium chromedriver, I compiled any docu
 
 \subsubsection*{Chinese Data}
 
-The first stage in the Chinese data cleaning pipeline was to extract each entry within the MFA and \emph{People's Daily} datasets that directly mentioned the United States (or its acronyms, ``US,'' or ``U.S.'').
+The first step in the Chinese data cleaning pipeline was to extract each entry within the MFA and \emph{People's Daily} datasets that directly mentioned the United States (or its acronyms, ``US,'' or ``U.S.'').
 
-Moreover, similar to compiling the full US dataset, it is important to recognize that the MFA enjoys much greater proximity to China's foreign policy-making processes and is thus a more authoritative representation of Beijing's true posture towards the US. This means that the weight of the MFA press corpus should be emphasized by being fully put to use. Meanwhile, the MFA documents would be supplemented by a sample of approximately 2500 \emph{People's Daily} articles.
+Moreover, the MFA is much closer to China's foreign policy-making process than \emph{People's Daily} and is thus a more authoritative representation of Beijing's true posture towards the US. I therefore keep every relevant MFA document and supplement them with a random sample of approximately 2,500 \emph{People's Daily} articles.
 
-\Cref{fig:china-doc-freq} illustrates the document count of US mentions across the MFA and \emph{People's Daily} corpora over time relative to the total document counts (after both corpora have been cleaned and trimmed by this data processing pipeline).
+\Cref{fig:china-doc-freq} shows the number of documents mentioning the US in the MFA and \emph{People's Daily} corpora over time, after both corpora have been cleaned and trimmed by this pipeline.
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
   \includegraphics[width=\textwidth]{03_china_doc_frequency.pdf}
   \caption{Relevant document frequency, China data}
@@ -153,19 +163,18 @@ Moreover, similar to compiling the full US dataset, it is important to recognize
 
 \subsubsection*{US Data}
 
-% COMMENT (Berlinerblau), on "rowdy": hahahah
-Given the fact that the White House holds the reins of foreign policy, whereas Congress may often take on the role of a rowdy passenger, the proportion of texts analyzed from both samples are adjusted accordingly. This means that the combined US dataset privileges Presidential data and incorporates all of its dated entries. It then supplements documents from the Presidential Library with a random sample of 2000 Congressional data points. \Cref{fig:us-doc-freq} traces the frequency of US documents over time, disaggregated by the compilation or archive from which they originated.
+Because the White House holds the reins of foreign policy, whereas Congress often takes on the role of a rowdy passenger, the US sample is weighted in the same way: the combined US dataset privileges Presidential data and incorporates all of its dated entries. It then supplements documents from the Presidential Library with a random sample of 2,000 Congressional data points. \Cref{fig:us-doc-freq} traces the frequency of US documents over time, disaggregated by the compilation or archive from which they originated.
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
   \includegraphics[width=\textwidth]{02_us_doc_frequency.pdf}
   \caption{Relevant document frequency, US data}
   \label{fig:us-doc-freq}
 \end{figure}
 
-\Cref{fig:composition} illustrates the composition of the fully-processed US and China datasets. Overall, around 15,200 texts are used in subsequent analyses, of which 6000 are sourced from the MFA, 2480 are sampled from the \emph{People's Daily}, 4760 are derived from the Presidential Library, and 2000 are sampled from Congress. In the next section, these data points of interest will be further scrutinized through sentiment and time series analysis.
+\Cref{fig:composition} illustrates the composition of the fully-processed US and China datasets. Overall, around 15,200 texts are used in subsequent analyses, of which 6,000 are sourced from the MFA, 2,480 are sampled from \emph{People's Daily}, 4,760 are derived from the Presidential Library, and 2,000 are sampled from Congress. The next section describes how these documents are scored for sentiment and aggregated into time series.
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
   \includegraphics[width=\textwidth]{04_data_composition.pdf}
   \caption{Composition of relevant data}
@@ -178,93 +187,91 @@ Given the fact that the White House holds the reins of foreign policy, whereas C
 
 \subsection{Extracting a Country's Latent Posture from Rhetoric}
 
-For each document $d$ in country $c$ mentioning its counterpart $c'$, issued by speaker or data source $k(d)$ in period $t(d)$, it is possible to represent the sentiment of $d$ as a function of three variables: (1) $c$'s latent posture towards $c'$ in period $t(d)$ denoted by $\theta_{c,t(d)}$, (2) some time-invarying speaker or source effect $\alpha_{k(d)}$, and (3)a random error term, $\varepsilon_{d}$: 
+For each document $d$ produced in country $c$ that mentions its counterpart $c'$, issued by speaker or data source $k(d)$ in period $t(d)$, it is possible to represent the sentiment $y_d$ of $d$ as the sum of three terms: (1) $c$'s latent posture towards $c'$ in period $t(d)$, denoted by $\theta_{c,t(d)}$, (2) a time-invariant speaker or source effect $\alpha_{k(d)}$, and (3) a random error term, $\varepsilon_{d}$:
+\begin{align}
+  y_d = \theta_{c,t(d)} + \alpha_{k(d)} + \varepsilon_d .
+  \label{eq:doc}
+\end{align}
+Here, $\alpha_{k(d)}$ captures the idiosyncratic posture of the speaker, the style of the data source, or any systematic bias a sentiment classifier has towards a particular text genre.
 
-\begin{align*}
-  y_d = \theta_{c,t(d)} + \alpha_{k(d)} + \varepsilon_d 
-\end{align*}
-
-$\alpha_{k(d)}$ captures the idiosyncratic posture of the speaker, the style of the data source, or any systematic bias a sentiment classifier has towards a particular text genre. 
-
-Taking the average sentiments across all $n_{c,t}$ documents within a period $t$ yields the following expression: 
-
+Averaging sentiment across all $n_{c,t}$ documents that country $c$ produces in period $t$ yields the following expression:
 \begin{align}
   \bar y_{c,t} = \theta_{c,t} + \underbrace{\sum_k w_{k,t}\,\alpha_k}_{\text{doc composition}} + \bar\varepsilon_{c,t},
 \qquad w_{k,t} = n_{k,t}/n_{c,t}.
+  \label{eq:avg}
 \end{align}
+This paper estimates $\theta_{c,t}$ for successive weeks or months by averaging the sentiment scores of all relevant documents within each period. It then constructs a time series of these estimates, $\{\bar y_{c,t}\}_{t=1}^T$, for each country $c$ and examines whether the Chinese time series reacts to the US time series, or vice versa.
 
-This paper aims to estimate $\theta_{c,t}$ across successive weeks or months by averaging the sentiment scores of all relevant documents within that time period. It will then construct a time series $\{\theta_{c,t}\}_{t=1}^T$ for each country $c$ and examine whether the Chinese time series reacts to the US time series, or vice versa.
-
-Thus, it may be advisable to subtract out the document composition term from the average sentiment. This ensures that the estimates of $\theta_{c,t}$ are not confounded by a change in document genre or speaker composition. For example, a sudden influx of documents from \emph{People's Daily} around 2007, as observed in \Cref{fig:china-doc-freq}, might skew the average sentiment even when China's latent posture remains unchanged. An adjusted average sentiment $\tilde y_{c,t}$ can be represented as follows:
-
+Because $\bar y_{c,t}$ also moves with the document composition term in \cref{eq:avg}, it may be advisable to subtract that term out of the average sentiment. This ensures that the estimates of $\theta_{c,t}$ are not confounded by a change in document genre or speaker composition. For example, a sudden influx of documents from \emph{People's Daily} around 2007, as observed in \Cref{fig:china-doc-freq}, might skew the average sentiment even when China's latent posture remains unchanged. An adjusted average sentiment $\tilde y_{c,t}$ can be represented as follows:
 \begin{align}
   \tilde y_{c,t} = \bar y_{c,t} - \sum_k w_{k,t}\hat\alpha_k
 \end{align}
+However, two considerations moderate the usefulness of $\tilde y_{c,t}$. First, speaker or source effects are poorly identified when most or all documents in $t$ are issued by the same speaker or source. Second, these effects may be endogenous to posture. A more hawkish Chinese posture towards the US, for instance, can manifest as more frequent podium appearances of ``Wolf Warrior'' spokespeople like Zhao Lijian. 
 
-However, two considerations moderate the usefulness of $\tilde y_{c,t}$. First, speaker or source effects are not always salient if most or all documents in $t$ are issued by the same speaker or source. Moreover, these effects may be endogenous to posture. A more hawkish Chinese posture towards the US, for instance, can manifest as more frequent podium appearances of ``Wolf Warrior'' spokespeople like Zhao Lijian or Hua Chunying. 
+My analysis finds that subtracting out the document composition term does not substantially move average sentiments over time, except in the Chinese series before \emph{People's Daily} documents enter the sample in mid-2007, as illustrated in \cref{fig:speaker-fe}. The Granger causality test results are robust to either time series construction. For the sake of simplicity, this paper will present results using $\bar y_{c,t}$.
 
-My analyses finds that subtracting out the document composition term does not significantly move average sentiments over time, as illustrated in [[TODO: add appendix figure]]. The Granger causality test results are robust to either time series construction. For the sake of simplicity, this paper will present results using $\bar y_{c,t}$.
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\textwidth]{../../robustness/output/speaker_fe_series.pdf}
+  \caption[Chinese and US sentiments net of speaker effects]{Chinese and US sentiments net of speaker effects. Solid: observed monthly mean sentiment $\bar y_{c,t}$; dashed: adjusted series $\tilde y_{c,t}$, with speaker effects $\hat\alpha_k$ (MFA spokesperson, \emph{People's Daily}, Presidential Library archive, Congressional Record section or CRS) estimated jointly with month fixed effects, so that each $\hat\alpha_k$ is identified only from speakers active in the same month. Full country series, approach 2 scores; curves are LOESS fits (span 0.15).}
+  \label{fig:speaker-fe}
+\end{figure}
 
 \subsection{Refining the Research Question}
+\label{sec:refine}
 
 Given the thematic diversity and volatility of the US and Chinese foreign policy discursive landscape, it would be overly reductive to crowd all textual data from the US and China into just two time series. As such, the central research question must be broken down into two more manageable components.
 
 First, we want to zero in on narrower time frames within broader sentiment trends. This means making longitudinal (i.e.\ temporal) cuts to the textual data and scanning for more local---rather than global---lagged correlations.
 
-Moreover, it is advisable to examine how the patterns of interaction between US and Chinese discourse vary by foreign policy issue areas. Are there particular topics that prompt the US or China to take the rhetorical reins and set sentiment trends, whereas in other topics, the former trend-setter slips into a more reactive role? This entails partitioning the textual datasets by topic.
+Second, it is advisable to examine how the patterns of interaction between US and Chinese discourse vary by foreign policy issue areas. Are there particular topics that prompt the US or China to take the rhetorical reins and set sentiment trends, whereas in other topics, the former trend-setter slips into a more reactive role? This entails partitioning the textual datasets by topic.
 
 \subsection{Sentiment Analysis}
 
-In order to efficiently consume, parse, and draw insights from this vast set of foreign policy documents, this paper turns to sentiment analysis, a foundational methodology in the world of NLP whereby a computer algorithm automatically classifies the sentiment polarity of a vast collection of texts.
+A growing number of studies apply sentiment analysis to US-China relations. \Textcite{mochtak2021}, who created the MFA press corpus, leveraged the Bing Liu lexicon to conduct some exploratory analysis of sentiment polarity on the MFA dataset. \Textcite[403--406]{zeng2022} started from a premise related to my own research question, whereby the authors sought to regress sentiment scores of US news media based on the Bing Liu lexicon (which acts as a proxy for US-China tensions) against US imports and disruptions to the global value chain during the trade war. Research by \textcite{choi2023}, moreover, uses the AFINN lexicon to compare the sentiments of speeches from members of Congress regarding the US's ratification of two free trade agreements. Although only tangentially related to the study of US-China relations, it nevertheless shows that sentiment analysis can be applied to official government discourse.
 
-The intersection between sentiment analysis and US-China relations has become increasingly frequented by scholars. \Textcite{mochtak2021}, who created the MFA press corpus, leveraged the Bing Liu lexicon to conduct some exploratory analysis of sentiment polarity on the MFA dataset. \Textcite[403--406]{zeng2022} started from a premise intimately linked with my own research question, whereby the authors sought to regress sentiment scores of US news media based on the Bing Liu lexicon (which acts as a proxy for US-China tensions) against US imports and disruptions to the global value chain during the trade war. Research by \textcite{choi2023}, moreover, uses the AFINN lexicon to compare the sentiments of speeches from members of Congress regarding the US's ratification of two FTA deals. Although only tangentially related to the study of US-China relations, it nevertheless corroborates the applicability of sentiment analysis to official government discourse.
+These studies, however, overwhelmingly rely on a lexicon-based approach, which assigns texts sentiment polarities by comparing their features to a pre-existing valence dictionary. This family of sentiment analysis methods is very ``economical,'' in that it derives satisfactory results with a minimal computational load. The disadvantage here, however, is that the dictionaries we use might not be well-adapted to specialized vocabulary, such as diplomatic talking points and domain-specific jargon.
 
-These aforementioned studies, however, overwhelmingly rely on a lexicon-based approach, which assigns texts sentiment polarities by comparing their features to a pre-existing valence dictionary. This family of sentiment analysis methods is very ``economical,'' in that it derives satisfactory results with a minimal computational load. The disadvantage here, however, is that the dictionaries we use might not be well-adapted to specialized vocabulary, such as the talking points and domain-specific jargon thrown around by state leaders and diplomats.
+As such, my research opts for a ``hybrid'' approach, whereby I pair the Bing Liu lexicon method with supervised machine learning approaches. This entails manually coding a random sample of 1,200 texts (600 from each country) into three classes (``positive,'' ``negative,'' or ``ambiguous''), transforming the documents into term-document matrices (TDMs) weighted by TF-IDF, and then allowing my algorithm to ``infer'' the functions that best classify sentiments on the TDMs under a stratified train-test split. These trained classifiers could then assign sentiment scores to the entire textual corpora. Supervised learning here is advisable because it tailors my sentiment analysis algorithm to consider specialized, foreign policy-oriented vocabulary that might be less compatible with traditional valence lexicons.\footnote{For a comparison of the pros and cons of lexicon-based and learning methods, see \textcite{kolchyna2015} and \textcite[444--45]{verma2018}.} Specifically, I implemented four supervised learning models: random forest, decision trees, Naive Bayes, and support vector machines (SVMs). The SVM and random forest models performed the best. The final hybrid score is an ensemble average of the SVM label, the random forest label, and the standardized Bing Liu lexicon score.\footnote{For the viability of hybrid models, see \textcite{dandrea2015}.}
 
-As such, my research opts for a ``hybrid'' approach, whereby I pair the Bing Liu lexicon method with two supervised machine learning approaches---support vector machines (SVM), along with random forest. This entails manually coding a random sample of 1200 texts (600 from each country) as three distinct classes: ``positive,'' ``negative,'' or ``ambiguous,'' and then allowing my algorithm to ``infer'' the optimal random forest and SVM functions based on a stratified train-test split. These trained and tuned classifiers could then assign sentiment scores to the entire textual corpora. Supervised learning here is advisable because it tailors my sentiment analysis algorithm to consider specialized, foreign policy-oriented vocabulary that might be less compatible with traditional valence lexicons.\footnote{For a comparison of the pros and cons of lexicon-based and learning methods, see \textcite{kolchyna2015} and \textcite[444--45]{verma2018}.}
-
-% PORT: Figure 5 (pipeline diagram) was cut, along with the sentence that introduced it
-% ("Figure 5 provides a comprehensive blueprint for my hybrid sentiment analysis pipeline").
-A hybrid approach that takes an ensemble average of the lexicon-driven and supervised approaches can combine the best of both worlds, thus providing scores that best represent the emotional valence of the original texts.\footnote{For the viability of hybrid models, see \textcite{dandrea2015}.}
+The hardest class of documents to classify is the one with ambiguous sentiments. I apply three different training approaches to see which addresses this challenge most effectively. The first approach performed an 80-20 train-test split on only the positive and negative documents in the manually coded sample. The second approach included all three sentiment categories (adding a random sample of 75 ambiguous documents). The third approach recoded the three-category sentiment label as two binary indicators, $\mathbf{1}\{d \text{ is positive}\}$ and $\mathbf{1}\{d \text{ is negative}\}$, and trained a separate model on each.
 
 \subsection{Granger Causality}
 
 \subsubsection*{The Mechanics of a Granger Test}
 
-Since this paper revolves around the central research question of whether one country's discourse takes the role of a sentiment ``trend-setter,'' while its counterpart acts as a ``trend-reactor,'' it may be particularly fruitful to borrow a quantitative tool that is ubiquitous---and hotly contested---in the realm of time series econometrics. Specifically, this paper will apply Granger causality to assess whether the patterns of interaction between the US and Chinese sentiments are statistically significant.
+Since this paper revolves around the central research question of whether one country's discourse takes the role of a sentiment ``trend-setter,'' while its counterpart acts as a ``trend-reactor,'' it may be particularly fruitful to borrow a tool that is ubiquitous---if often over-interpreted---in time series econometrics. Specifically, this paper will apply Granger causality to assess whether the patterns of interaction between the US and Chinese sentiments are statistically significant.
 
-The test essentially looks at whether the predictive power of a time series (such as US sentiment trends) can be significantly improved by expanding a restricted, strictly autoregressive model to incorporate another time series's values (for example, Chinese sentiment trends) as a parameter. The comparison between the univariate model and the full bivariate model is thus illustrated below:
-% PORT: the .docx wrote the lagged terms as US Senti_{t-k} inside a sum over n = 1..k;
-% the subscripts are corrected to t-n here, and "US Senti"/"China Senti" are shortened
-% to S^{US}/S^{CN}.
-\begin{align*}
-  \text{Restricted:}\quad S^{\mathrm{US}}_t &= \sum_{n=1}^{k} \alpha_n S^{\mathrm{US}}_{t-n} + e_t \\
-  \text{Full:}\quad S^{\mathrm{US}}_t &= \sum_{n=1}^{k} \alpha_n S^{\mathrm{US}}_{t-n} + \sum_{n=1}^{k} \beta_n S^{\mathrm{CN}}_{t-n} + \epsilon_t
-\end{align*}
-where $S^{\mathrm{US}}_t$ denotes US sentiment towards China at time $t$, while $S^{\mathrm{US}}_{t-n}$ (or $S^{\mathrm{CN}}_{t-n}$) denotes US (or Chinese) sentiment at time $t-n$. In this sense, $k$ is the ``lag order'' of the Granger causality, or the number of values in the past we consider to model the sentiment at time $t$. $e_t$ and $\epsilon_t$, moreover, are error terms for the restricted and full models predicting US sentiment, respectively.
+The test essentially looks at whether the predictive power of a time series (such as US sentiment trends) can be significantly improved by expanding a restricted, strictly autoregressive model to include lagged values of another time series (for example, Chinese sentiment) as regressors. The univariate (restricted) and bivariate (full) models are:
+\begin{align}
+  \text{Restricted:}\quad \bar{y}_{\mathrm{US},t} &= \mu + \sum_{n=1}^{p} \gamma_n \bar{y}_{\mathrm{US},t-n} + u_t \\
+  \text{Full:}\quad \bar{y}_{\mathrm{US},t} &= \mu + \sum_{n=1}^{p} \gamma_n \bar{y}_{\mathrm{US},t-n} + \sum_{n=1}^{p} \beta_n \bar{y}_{\mathrm{CN},t-n} + v_t
+\end{align}
+Here, $\bar{y}_{\mathrm{US},t}$ denotes US sentiment towards China in period $t$, while $\bar{y}_{\mathrm{US},t-n}$ (or $\bar{y}_{\mathrm{CN},t-n}$) denotes US (or Chinese) sentiment in period $t-n$. In this sense, $p$ is the ``lag order'' of the Granger test, or the number of past periods we consider to model the sentiment in period $t$. $u_t$ and $v_t$ are the error terms of the restricted and full models, respectively. The null hypothesis that Chinese sentiment does not Granger-cause US sentiment is $\beta_1 = \dots = \beta_p = 0$.
 
-% PORT: the replicated tables report F-test p-values; the text below says chi-square.
-To determine the significance of Granger causality between two time series, I employ a Wald test that situates each coefficient $\beta_n$ within a chi-square distribution to check whether they differ from 0 in any substantive fashion.
-
-Because we want to understand the lagged correlation between US and Chinese sentiments towards each other in both directions, it would also clearly be advisable to flip the variables in the model laid out above and assign the Chinese time series as the response.
+To test this null, I use an F-test of whether the residual sum of squares (RSS) of the full model is significantly smaller than that of the restricted model. With $T$ observations used in the regressions, the F-statistic is
+\begin{align}
+  F = \frac{(\mathrm{RSS}_{\text{restricted}} - \mathrm{RSS}_{\text{full}}) / p}{\mathrm{RSS}_{\text{full}} / (T - 2p - 1)}.
+\end{align}
+Because we want to understand the lagged correlation between US and Chinese sentiments in both directions, I also flip the variables in the models above and run the test with the Chinese time series as the response.
 
 \subsubsection*{Applying the Test to Different Cuts of Data}
 
-Given the potentially reductive nature of analyzing global time series, this paper also considers applying time and topic filters on the textual datasets before implementing Granger tests (as mentioned in the opening of \cref{sec:methods}).
+Given the potentially reductive nature of analyzing global time series, this paper also applies time and topic filters to the textual datasets before implementing Granger tests (as motivated in \cref{sec:refine}).
 
-Specifically, in order to narrow down the time frame of my analysis, I performed two types of ``cut'' on the data prior to inference testing: a ``backward-dating'' cut, which selects windows of monthly or weekly data before a certain date $D$, or a ``forward-dating'' cut, which extracts portion of the original time series after $D$. The set of $D$, moreover, encompasses the start of every year from 2002 (the starting point of the China time series) to 2023 (the tail of both China and US time series).
+Specifically, in order to narrow down the time frame of my analysis, I performed two types of ``cut'' on the data prior to inference testing: a ``backward-dating'' cut, which selects windows of monthly or weekly data before a certain date $D$, or a ``forward-dating'' cut, which extracts the portion of the original time series after $D$. The set of $D$ encompasses the start of every year from 2002 (the start of the Chinese time series) to 2020.
 
-Alternatively, to achieve thematic---rather than temporal---granularity, this paper also looks at Granger causality for major topics (or themes) that dominate US-China foreign policy discourse. Each topic, as well as the manually-curated set of keywords that are used to filter these topics, are illustrated in \cref{tab:topic-keywords}.
+Alternatively, to achieve thematic---rather than temporal---granularity, this paper also looks at Granger causality for major topics (or themes) that dominate US-China foreign policy discourse. \Cref{tab:topic-keywords} lists each topic and the hand-picked keywords used to identify it.
 
 \input{tables/topic_keywords.tex}
 
-\subsubsection*{Granger Test Implementation}
+\subsubsection*{Granger Causality Test Implementation}
 
-To construct time series with a temporal cut, sentiment scores from both datasets are averaged and aggregated by weeks. On the other hand, sentiment scores for the time series with a thematic cut are grouped by month. The reasoning here is that a topic filter makes the datasets much more ``shallow.'' In other words, grouping the data by weeks---as opposed to months---would create some time windows that are too sparsely populated by texts, or missing data entirely, to accurately reflect overarching rhetorical sentiments.
+To construct time series with a temporal cut, sentiment scores from both datasets are averaged by week or by month. On the other hand, sentiment scores for the time series with a thematic cut are grouped by month only. The reasoning here is that a topic filter makes the datasets much more ``shallow.'' In other words, grouping the data by weeks---as opposed to months---would create some time windows that are too sparsely populated by texts, or missing data entirely, to accurately reflect overarching rhetorical sentiments.
 
-After constructing the weekly and monthly time series, an Augmented Dickey-Fuller (ADF) test was applied to every time series of interest in order to ensure compliance with the stationarity assumption of the Granger test. The ADFs demonstrated significance or near-significance in every case (i.e.\ the time series all passed the ADF test), which means that no more data processing---such as first order differencing---was warranted.
+After constructing the weekly and monthly time series, I apply an Augmented Dickey-Fuller (ADF) test to every time series of interest in order to ensure compliance with the stationarity assumption of the Granger test. For pairs in which both series reject a unit root at the 5\% level, the Granger test is run on the series in levels. If neither series is stationary, I take first differences of both series before implementing further analyses. If only one series in the pair is stationary, however, first differencing both series over-differences the stationary one and costs statistical power. This motivates the modification proposed by \textcite{toda1995}, in which both series enter in levels with one additional lag included in the regression but excluded from the Wald test (computed in its F form).
 
-To determine the optimal lag order $k$, moreover, it is possible to examine how different model diagnostic indices of a Granger test---such as the AIC (Akaike Information Criterion) and HQ (Hannan--Quinn) values---shift as this parameter is continuously adjusted. I concluded that lag parameters of 2 or 3 (with units in weeks or months depending on the interval used to group the sentiment data) gave the most outstanding performances.
+To choose the lag order $p$, I examine how information criteria---such as the AIC (Akaike Information Criterion) and HQ (Hannan--Quinn) values---shift as this parameter is adjusted. Lag orders of 2 or 3 (in weeks or months, depending on the interval used to group the sentiment data) performed best. The main findings are robust to all lag orders $p \in \{1,\dots,5\}$.
 
 % =====================================================================
 \section{Results}
@@ -272,218 +279,162 @@ To determine the optimal lag order $k$, moreover, it is possible to examine how 
 
 \subsection{Sentiment Analysis}
 
-The hybrid model put up impressive performances for texts within both the US and Chinese datasets that had an unambiguous emotional valence. Ambiguous sentiments, unsurprisingly, were more difficult to classify.
+The hybrid model generally classifies texts with positive or negative emotional valence well. Ambiguous sentiments, unsurprisingly, were more difficult to classify.
 
-For instance, the classification of positive- and negative-sentiment Chinese texts mentioning the US yielded AUCs of 0.893 and 0.962, respectively, although for texts containing ambiguous sentiments the AUC drops to 0.608. The corresponding ROC curves are laid out in \cref{fig:china-roc}. \todo{These AUCs (and the US AUCs below) are from the 2023 analysis. The replicated ROC figures and \cref{tab:sentiment-stats} show all three train-test approaches; pick one and update the numbers.}
+\Cref{fig:china-roc,fig:us-roc} report the performances of all three sentiment classification approaches on the Chinese and US datasets. Approach 2 (training the models once on all three sentiment classes) performed best on the US data, while approaches 1 and 3 did somewhat better on the Chinese data; approach 2 is the only one that performs well on both. A detailed report of sentiment classification results is provided in \cref{tab:sentiment-stats}. Subsequent time series analyses will use sentiment scores from this approach, although I also verified that the Granger causality test results are robust to the other two approaches.
 
-\begin{figure}[htbp]
+\input{../../figures/output/06_sentiment_stats.tex}
+
+Under approach 2, the classification of positive- and negative-sentiment Chinese texts mentioning the US yielded AUCs of at least 0.88, although for texts containing ambiguous sentiments the AUC drops to 0.49, no better than chance. The corresponding ROC curves are laid out in \cref{fig:china-roc}. 
+
+\begin{figure}[!htbp]
   \centering
   \includegraphics[width=\textwidth]{07_china_roc.pdf}
   \caption{ROC curves for sentiment classification of Chinese texts}
   \label{fig:china-roc}
 \end{figure}
 
-Meanwhile, for US texts mentioning China, the algorithm achieved AUCs of 0.779, 0.716, and 0.540, respectively. The ROC curves for each class are illustrated in \cref{fig:us-roc}.
+Meanwhile, for US texts mentioning China, the algorithm also achieved AUCs of at least 0.88 for positive and negative sentiments, compared to 0.62 for ambiguous sentiments (\cref{fig:us-roc}).
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
   \includegraphics[width=\textwidth]{08_us_roc.pdf}
   \caption{ROC curves for sentiment classification of US texts}
   \label{fig:us-roc}
 \end{figure}
 
-Subsequently, by applying the sentiment classification algorithm to the entirety of the two textual datasets, and mapping the sentiment scores from each of the four datasets (i.e.\ MFA, \emph{People's Daily}, Presidential Library, and Congressional documents) onto distinct time series, we obtain \cref{fig:sent-source}. Note that all four time series have been smoothed by Loess so that granular, local noise do not crowd out macro-trends.
+Subsequently, by applying the sentiment classification algorithm to the entirety of the two textual datasets, and mapping the sentiment scores from each of the four datasets (i.e.\ MFA, \emph{People's Daily}, Presidential Library, and Congressional documents) onto distinct time series, we obtain \cref{fig:sent-source}. All four time series have been smoothed by LOESS.
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
   \includegraphics[width=\textwidth]{09_sentiment_by_source.pdf}
   \caption{Sentiments of each dataset over time}
   \label{fig:sent-source}
 \end{figure}
 
-We may also merge the datasets by their affiliated country to create a global Chinese time series, contrasted by a global US time series. To retain both local fluctuations and long-term trends, we can apply two different span parameters on each of the time series to derive \cref{fig:sent-country}.
+We may also merge the datasets by country to create an aggregate Chinese time series and an aggregate US time series. To retain both local fluctuations and long-term trends, \cref{fig:sent-country} smooths each series with two different LOESS spans.
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
   \includegraphics[width=\textwidth]{10_sentiment_by_country.pdf}
   \caption{Chinese and US sentiments over time}
   \label{fig:sent-country}
 \end{figure}
 
-Several insights can quickly be gleaned from \cref{fig:sent-source,fig:sent-country}. First, it is easy to pick up on the abnormally high degree of sentiment volatility roughly coinciding with the Trump presidency---particularly within the Chinese time series. Professor Evan Medeiros terms this phenomenon the ``Trump bump.''\todo{Source for Medeiros's ``Trump bump''?} In the early days of the Trump presidency, Beijing softened its rhetoric in hopes of wooing an unorthodox and unpredictable administration that vowed to dismantle the Washington foreign policy establishment. This ostensible reconciliation culminated in Trump's grandiose state visit to Beijing in November 2017. Yet all guises of bilateral cordiality collapsed with the onset of a long and bitter trade war. These events, along with other salient, watershed moments in bilateral relations that have affected the topology of the time series are illustrated in \cref{fig:event-map}.
+Several insights can quickly be gleaned from \cref{fig:sent-source,fig:sent-country}. First, it is easy to pick up on the abnormally high degree of sentiment volatility roughly coinciding with the Trump presidency---particularly within the Chinese time series. Evan Medeiros terms this phenomenon the ``Trump bump.'' In the early days of the Trump presidency, Beijing softened its rhetoric in hopes of wooing the new administration that vowed to dismantle the Washington foreign policy establishment. This ostensible reconciliation culminated in Trump's state visit to Beijing in November 2017. Yet bilateral cordiality collapsed with the onset of a trade war. These events shaped the contours of the time series illustrated in \cref{fig:event-map}.
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
   \includegraphics[width=\textwidth]{29_event_map.pdf}
   \caption{Sentiments of each country annotated with salient events}
   \label{fig:event-map}
 \end{figure}
 
-What's more, we might note that before Chinese sentiments plunged into a freedive towards unrelenting negativity in early 2018, Beijing's rhetoric vis-à-vis its counterpart was nearly always more positive compared to Washington's attitudes towards Beijing.\footnote{Da Wei, in fact, also identifies 2018 as the ``watershed year'' in the US-China competition \autocite[21]{da2019}.} Moreover, and perhaps not surprisingly, members of Congress have evidently disseminated a steady stream of pessimism with regards to China. Compared to the relative optimism of the MFA press corpus (at least until 2018), discussions of the US in \emph{People's Daily} also seem to be weighed down by significantly more negativity. This is the reason for the dip in Chinese sentiment around 2007, which coincides with the time when state media data became available. The time series corresponding to this state-run newspaper, in addition, struggles to convey any coherent, meaningful information due to its volatility and the fact that it is missing data prior to 2007.
+Second, before Chinese sentiments plunged in 2018, Beijing's rhetoric vis-à-vis its counterpart was nearly always more positive than Washington's rhetoric towards Beijing.\footnote{Da Wei also identifies 2018 as the ``watershed year'' in the US-China competition \autocite[21]{da2019}.} Moreover, members of Congress have disseminated a steady stream of pessimism with regard to China. Compared to the relative optimism of the MFA press corpus (at least until 2018), discussions of the US in \emph{People's Daily} also seem to be weighed down by noticeably more negativity. 
 
 \subsection{Granger Causality with Time Filter}
 
-% PORT: the .docx called this table "Figure 12" in the text and "Figure 13" in its caption.
-By correlating sentiments from the Chinese and US corpora on a weekly basis and making forward-dating cuts, the Granger tests oscillated between bidirectional causality and unidirectional causality with US data as a response. The Wald test $p$-values from both directions of the test as the date filter is continuously pushed back (i.e.\ from 2002-01-01 to 2020-01-01) are fully laid out in \cref{tab:granger-full-data}.\footnote{Here, we set a significance level of 0.05, and use a lag parameter of 3.}
+When sentiments from the Chinese and US corpora are aggregated by week and cut forward from successive start dates, the Granger tests shift from bidirectional causality (start dates 2002--2007) to unidirectional causality with US data as the response (start dates 2008--2019). The F-test $p$-values from both directions of the test, as the start date is moved forward from 1 January 2002 to 1 January 2020, are laid out in the left panel of \cref{tab:granger-time}.\footnote{Here, we set a significance level of 0.05, and use a lag parameter of 3.}
 
-\input{../../figures/output/14_granger_full_data.tex}
+\input{../../figures/output/13_14_granger_time.tex}
 
-The results become even more interesting if we isolate data from the MFA press corpus and the US Presidential Library, and then perform a similar set of Granger tests on the two time series constructed from these datasets alone. The rationale here is that the MFA and the White House enjoy the greatest proximity to the foreign policy-making apparatus in Beijing and Washington, which means that rhetoric disseminated by these institutions might be the most representative of how core decision-makers on each side perceive one another.
+Additionally, because the MFA and the White House enjoy the greatest proximity to the foreign policy-making apparatus in Beijing and Washington, their sentiments may both be more directly comparable and more representative of how core decision-makers perceived each other. Thus, I run another set of Granger tests on time series isolating these two corpora.
 
-The Wald test $p$-values of Granger causality tests using MFA and Presidential Library subsets are laid out in \cref{tab:granger-mfa-presidential}.
+The F-test $p$-values of Granger causality tests using MFA and Presidential Library subsets are laid out in the right panel of \cref{tab:granger-time}.
 
-\input{../../figures/output/13_granger_mfa_presidential.tex}
+What becomes evident in \cref{tab:granger-time} is that for the majority of time periods, the Granger causality tests exhibit unidirectional causality whereby Chinese sentiments effectively forecast US sentiments, but \emph{not} vice versa. In the MFA and Presidential Library series, this holds for every start date from 2002 through 2018: White House discourse about China seems to exhibit sentiments that ``react'' to the tones of MFA rhetoric towards the US. This result largely persists when we group sentiments into monthly instead of weekly time series (\cref{fig:granger-tree-findings}).
 
-What becomes evident in \cref{tab:granger-full-data} is that when we consider data after 2008, then the Granger causality tests begin to exhibit an interesting unidirectional causality whereby Chinese sentiments effectively forecast US sentiments, but \emph{not} vice versa. \todo{Re-read this subsection against the replicated tables: with the MFA/Presidential data, China-as-response is now insignificant for almost every start date, not only after 2008.}
-
-In this sense, for the late 2000s and the majority of the 2010s, discourse emanating from the White House about China seems to exhibit sentiments that ``react'' to the tones of MFA rhetoric towards the US. This phenomenon supports the idea that, for the past decade and a half, the US---or at least its head of state---has taken on the role of a discourse sentiment ``trend-reactor,'' whereas its Chinese MFA interlocutors can be more aptly described as sentiment ``trend-setters.''
-
-Crucially, we must also note that Granger causality tests constructed from backward-dating temporal cuts were rarely significant. This finding indicates that the predictive power of US and Chinese political sentiments towards each other is much more salient in more recent periods of time.
+Granger causality tests constructed from backward-dating temporal cuts, by contrast, were rarely significant. This finding indicates that the predictive power of US and Chinese political sentiments towards each other is much more salient in more recent periods of time.
 
 \subsection{Granger Causality with Topic Filters}
 
-\subsubsection*{How Often is Each Topic Mentioned?}
+\subsubsection*{Exploring Time Series by Topic}
 
 Beyond applying Granger causality on sentiment trends filtered longitudinally, it is also possible to look at how sentiment trends for specific topics or themes correlate with one another.
 
-First, by applying the filters introduced in the topic-keyword dyad table above (\cref{tab:topic-keywords}), it is possible for us to visualize how the relative popularity of each issue area fluctuates over time. \Cref{fig:us-topic-counts} illustrates how often references to trade, Chinese domestic periphery, multilateral diplomacy, Taiwan, global health, South China Sea, and Russia surface in US documents over time. Each topic is denoted by a band in a stacked area plot, and the formerly irregular and jagged contours of the area chart have been, once again, smoothed by Loess.\footnote{Of course, many documents contain overlaps of two or more topics. These would be double-counted within the area chart, although this would not affect the subsequent analysis. Moreover, topics within the figure are ordered alphabetically, and not by their relative salience.}
+First, by applying the filters introduced in the topic-keyword dyad table above (\cref{tab:topic-keywords}), we can visualize how the relative popularity of each issue area fluctuates over time. \Cref{fig:topic-counts} illustrates how often references to trade, the Chinese domestic periphery, multilateral negotiations, Taiwan, global health, the South China Sea, and Russia surface in US documents (top panel) and in Chinese discourse vis-à-vis the US (bottom panel) over time. Each topic is denoted by a band in a stacked area plot, and the formerly irregular and jagged contours of the area chart have been, once again, smoothed by LOESS.\footnote{Many documents mention two or more topics. These are counted once per topic in the area chart, although this does not affect the subsequent analysis. Topics within the figure are ordered as in \cref{tab:topic-keywords}, not by their relative salience.}
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
-  \includegraphics[width=\textwidth]{15_us_topic_counts.pdf}
-  \caption{Document counts by topic over time, US data}
-  \label{fig:us-topic-counts}
+  \includegraphics[width=\textwidth]{15_16_topic_counts.pdf}
+  \caption{Document counts by topic over time, US and China data}
+  \label{fig:topic-counts}
 \end{figure}
 
-Similarly, we can also visualize the frequency with which each of these policy themes appear in Chinese discourse vis-à-vis their great power counterpart (\cref{fig:china-topic-counts}).
+Several key takeaways can be immediately gleaned from these plots. First, trade and finance has been the most frequent topic in government discourse surrounding US-China relations for most of the past two decades. In the US, we see ``bursts'' of mentions related to this motif around 2000, as well as between roughly 2018 and 2020. Both spikes make intuitive sense: the former coincides with the debate over China's accession to the World Trade Organization (and Congress's 2000 vote to grant China permanent normal trade relations), whereas the latter signals the onset of the trade war that broke out in early 2018.\footnote{For informative overviews and chronologies of the US-China relationship, particularly with regard to trade, see \textcite{brown2018} and \textcite{wang2019}.} While the Chinese data do not extend back far enough to capture discourse surrounding WTO entry, we do observe a similar jump beginning in 2017 and intensifying from 2018.
 
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{16_china_topic_counts.pdf}
-  \caption{Document counts by topic over time, China data}
-  \label{fig:china-topic-counts}
-\end{figure}
+Another feature to point out in the bottom panel of \cref{fig:topic-counts} is that domestic periphery controversies---perhaps the most sensitive issue for Chinese policy-makers---moved into the rhetorical spotlight starting in late 2018. This burst in mentions could be driven by a number of factors, ranging from the pro-democracy movement in Hong Kong to the atrocities in Xinjiang. The surge of domestic periphery issues to the forefront of Chinese discourse (i.e.\ an increase in their share of documents) coincides with a pronounced decline in Chinese sentiments vis-à-vis the US (\cref{fig:china-periphery}).\footnote{For a clear explanation of China's sensitivity around issues related to territorial integrity, see \textcite[193--200]{nathan2015}.}
 
-Several key takeaways can be immediately gleaned from these above plots. First, trade and finance has maintained its dominance within government discourse surrounding US-China relations for the past two decades. In the US, we see ``bursts'' of mentions related to this political motif around 2000, as well as between roughly 2018 and 2020. Both spikes in frequencies make intuitive sense, as the former time period coincides with China's accession to the World Trade Organization, whereas the latter burst signals the onset of the bitter trade war that broke out in early 2018.\footnote{For informative overviews and chronologies of the US-China relationship, particularly with regard to trade, see \textcite{brown2018} and \textcite{wang2019}.} While Chinese data does not extend back long enough to capture discourse surrounding the monumental WTO entry, we do observe a similar jump in late 2017 or 2018, as well as around 2016.
-
-Another feature to point out in \cref{fig:china-topic-counts} is the fact that domestic periphery controversies---perhaps the most sensitive issue for Chinese policy-makers---seemed to steal the rhetorical spotlight starting in 2018. This burst in mentions could be driven by a number of factors, ranging from the pro-democracy movement in Hong Kong, to the atrocities behind barbed wires in Xinjiang. Incidentally, the meteoric surge of domestic periphery issues to the forefront of Chinese discourse (i.e.\ an increase in relative document counts) matches up with an epic decline in Chinese sentiments vis-à-vis the US (as illustrated in \cref{fig:china-periphery}).
-
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
   \includegraphics[width=\textwidth]{17_china_periphery_sentiment.pdf}
-  \caption{As domestic periphery discourse soars, mean sentiment plummets}
+  \caption[Domestic periphery mentions and sentiment, China data]{Domestic periphery mentions and sentiment, China data. Top: monthly share of Chinese documents mentioning the domestic periphery; bottom: hybrid sentiment scores of all Chinese documents. Curves are LOESS fits.}
   \label{fig:china-periphery}
 \end{figure}
 
-\subsubsection*{What Are the Sentiments of Each Topic?}
+\Cref{fig:topic-sent} disaggregates the tone of US and Chinese discourse by topic, plotting both countries' sentiment series together in each topic's panel. In most topics, Chinese sentiment sits above US sentiment for much of the period before converging towards it in the late 2010s.
 
-The figure disaggregating the tone of US discourse by topic is presented in \cref{fig:us-topic-sent}.
-
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
-  \includegraphics[width=\textwidth]{18_us_topic_sentiment.pdf}
-  \caption{US document sentiments by topic}
-  \label{fig:us-topic-sent}
-\end{figure}
-
-The fluctuations of sentiment in the Chinese datasets, delineated by topic, are similarly visualized in \cref{fig:china-topic-sent}.
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{19_china_topic_sentiment.pdf}
-  \caption{Chinese document sentiments by topic}
-  \label{fig:china-topic-sent}
-\end{figure}
-
-Once again, a Loess smoother ran through both graphs to even out the noise. We might note that sentiments across every topic and for both countries seemed to tumble into precipitous declines within the last quarter of each time series.
-
-Another particularly informative parallel across \cref{fig:us-topic-sent,fig:china-topic-sent} is the consistent positivity associated with multilateralism, contrasted with the unrelenting negativity tied to ``domestic periphery.'' This makes sense, as the former represents common grounds around which interests across the Pacific converge, whereas any conversation related to how China governs its deeply contested periphery activates China's political alarm bells and trespasses upon its inviolable ``red line'' of national sovereignty.\footnote{A very clear and helpful explanation for China's sensitivity around issues related to territorial integrity is \textcite[193--200]{nathan2015}.} The US adopts a similar strain of negativity and looks on at how China is treating its formerly autonomous holdings---as well as how it is allegedly trampling the sacred values of ``democracy'' and ``human rights''---with increasing disdain.
-
-It is crucial to note that because these sentiment time series have been thoroughly smoothed, much of their nuances and meaningful fluctuations may have been glossed over. As such, beyond simply interpreting the approximated curves of every topic-specific time series at once, it is advisable to isolate the time series of each topic in more detailed pairwise comparisons, while also lifting the strict smoothing parameters in order to capture more of the data's true variability.
-
-As an example, \cref{fig:trade-sent} plots the US and China's sentiments vis-à-vis trade next to each other using two different Loess smoothing parameters (the dotted lines are produced with the same spans as those in the line plots that visualize all topic-specific time series).
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{20_trade_sentiment.pdf}
-  \caption{US and Chinese sentiments towards trade and finance over time}
-  \label{fig:trade-sent}
-\end{figure}
-
-As we can see, the two sentiment trends exhibit some visible correlation with one another, but it is perhaps also striking that prior to the late 2010s when both countries' sentiments towards trade plunged towards a trough, there was a wide rift in the emotional polarity of US and Chinese discourse vis-à-vis all things trade and finance. This makes sense, as Beijing's highly effective economic growth strategy was buoyed by its exports and trade surpluses, whereas the US's attitude towards trade with China became increasingly tainted with trepidation about the erosion of its own manufacturing capacity, as well as China's unfair IP, market access, and forced technology transfer practices.
-
-We can observe a narrower, but nevertheless substantial gap in sentiment when it comes to discourse surrounding multilateralism, though sentiments in this arena have gradually converged over time. Similar to trade, moreover, the pair of time series in \cref{fig:multilateral-sent} also fluctuate in sync.
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{21_multilateral_sentiment.pdf}
-  \caption{US and Chinese sentiments towards multilateralism over time}
-  \label{fig:multilateral-sent}
-\end{figure}
-
-Within both \cref{fig:trade-sent,fig:multilateral-sent}, one might remark that Chinese sentiments took a steep dive off a cliff around 2007. This trend might actually not be due to any organic changes in Chinese discourse; rather, it should be attributed to the influx of \emph{People's Daily} articles, which are generally less positive in their tones compared to the MFA corpus.
-
-The differences in the US and China's sentiments towards the topics above is juxtaposed by the relative congruence of both countries' sentiments towards the Chinese domestic periphery issue (\cref{fig:periphery-sent}). As discussed, this topic is marred by unrelenting finger-pointing, paranoia, and negativity from both sides.
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{23_periphery_sentiment.pdf}
-  \caption{US and Chinese sentiments towards the domestic periphery over time}
-  \label{fig:periphery-sent}
+  \includegraphics[width=\textwidth]{18_19_topic_sentiment.pdf}
+  \caption{US and Chinese document sentiments by topic}
+  \label{fig:topic-sent}
 \end{figure}
 
 \subsubsection*{Granger Causality}
 
-Having visualized tonal trends disaggregated by issue area, this paper implemented Granger causality on every pair of topic-based time series. The Wald test results for each test are reported in \cref{tab:granger-topics-full}.\footnote{When conducting Granger tests for monthly data filtered by topic, all sub-data sets generated showed significance for---or were on the threshold of showing significance for---the ADF test (i.e.\ they passed for all intents and purposes). As such, no differencing mechanisms were deemed necessary to prepare the data for Granger causality.}
+Having visualized sentiment trends disaggregated by issue area, I run Granger tests on each topic's pair of time series. The F-test results are reported in \cref{tab:granger-topics}. Over the full time series, topic-specific Granger causality tests only return significant results for ``trade and finance'' (US as response) and ``global health'' (China as response). In the period since 2015, when MFA data becomes denser, the US-as-response test for ``trade and finance'' remains significant, as shown in the right panel of \cref{tab:granger-topics}. Unlike in the all-topic specifications, however, per-topic Granger causality tests do not show robust unidirectional statistical significance with the US as response, which partly reflects the sparsity of the data after applying topic filters.
 
-\input{../../figures/output/24_granger_topics_full.tex}
-
-Following the patterns of interaction between overall US and Chinese sentiment time series, China's discourse once again functions more as a ``trend-setter,'' while the US appears to be the ``reactive'' party across all the topics that returned significant models---specifically, Chinese domestic periphery issues, trade and finance, as well as Taiwan. In this sense, the one-directional significance suggests that the Chinese time series contains some predictive power vis-à-vis US sentiment trends. \todo{In the replicated \cref{tab:granger-topics-full}, only trade and finance is significant ($p = 0.043$); domestic periphery and Taiwan are not. See also \cref{tab:granger-topics-2015} in the appendix.}
+\input{../../figures/output/24_25_granger_topics.tex}
 
 \subsection{Overview of Meaningful Findings}
 
-In nearly every Granger causality test examined in my research, Chinese sentiment trends appear to meaningfully forecast US time series, whereas US data is much less effective in forecasting Chinese sentiments. These patterns suggest that time series constructed from US foreign policy discourse frequently imitate lagged features of Chinese data. The natural implication here is that Chinese political discourse leans toward a proclivity to assume ``trend-setting'' behavior, which is contrasted by the US's tendency to react to its counterpart.
+In most Granger causality tests examined in my research, Chinese sentiment trends appear to meaningfully forecast US time series, whereas US data is much less effective in forecasting Chinese sentiments. \Cref{fig:granger-tree-findings} summarizes all Granger causality specifications and their directional significance. These patterns suggest that sentiment time series constructed from US foreign policy discourse frequently track lagged features of the Chinese data. The natural reading is that Chinese political discourse tends to set sentiment trends while US discourse tends to react to them---a reading that \cref{sec:limitations} qualifies.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\textwidth]{28_granger_tree_findings.pdf}
+  \caption[Bivariate Granger causality tree with summary of findings]{Bivariate Granger causality tree with summary of findings. Each cell reports which direction of the Granger test is significant at $p < 0.05$ (3 lags). Topic series use the full data aggregated by month, over all years and from 2015 onward (\cref{tab:granger-topics}); time-window series use forward-dating cuts at the start of each year.}
+  \label{fig:granger-tree-findings}
+\end{figure}
+
+% =====================================================================
+
+\section{Limitations}
+\label{sec:limitations}
+
+\subsection{Time Series Noise Compromises Granger Causality Tests}
+
+When interpreting the significance of the US-as-response Granger causality tests, it is important to note that the US time series is much noisier than its Chinese counterpart. 
+
+We can illustrate this by computing a ``signal-to-noise ratio'' within the China and US time series. Consider the set-up in \cref{eq:avg}, where $\bar y_{c,t} = \theta_{c,t} + \bar\varepsilon_{c,t}$ (dropping the speaker or source effects term). Given that $\theta_{c,t}$ is held fixed within each time period, the variance in sentiments across documents in $t$ is entirely driven by noise. We can therefore take a pooled average of the within-period variance of document sentiments to estimate the document-level noise variance, $\sigma_c^2$. The mean sentiment in period $t$ then has noise variance $\sigma_c^2/n_{c,t}$, where $n_{c,t}$ is the number of documents in $t$. Averaged over periods, the noise variance of $\bar y_{c,t}$ is therefore
+\begin{align}
+  \tau_c^2 \equiv \sigma_c^2 \cdot \mathbb E\!\left[1/n_{c,t}\right].
+\end{align}
+Assuming that signal and noise are uncorrelated, we have $\mathrm{Var}(\bar y_{c,t}) = \mathrm{Var}(\theta_{c,t}) + \tau_c^2$. The signal-to-noise ratio, $\mathrm{Var}(\theta_{c,t}) / \tau_c^2$, of both countries' weekly time series is reported in \cref{tab:noise-snr}.
+
+\input{../../robustness/output/noise_snr.tex}
+
+This ratio is roughly a third as large for the US time series as for the Chinese one, in large part because the US dataset is sparser, and the signal-to-noise ratio is increasing in the number of documents per week, $n_{c,t}$. 
+
+Assuming that latent signals persist over time, a noisier measure of the past signal is a weaker predictor of future signals. Thus, if the US and China time series are driven by the same underlying ``temperature'' (plausible given they are responding to the same set of world events), then $\bar{y}_{\mathrm{US},t-n}$ will only noisily forecast $\bar{y}_{\mathrm{US},t}$. On the other hand, the cleaner $\bar{y}_{\mathrm{CN},t-n}$ will be a better predictor of $\bar{y}_{\mathrm{US},t}$. A US-as-response Granger causality test will therefore find a relatively large reduction in RSS from the restricted to the full model. In other words, when one time series is substantially noisier than the other, it is possible that a Granger causality test will find spurious significance when the noisier time series is the response variable. Future work can consider whether the Granger causality test asymmetry persists when we downsample the Chinese time series each week, or use state-space models to better capture latent signals.
+
+\subsection{Stance vs.\ Sentiment}
+\label{sec:stance}
+
+The current hybrid sentiment classifier considers the sentiment of a document as a whole, whereas a better approach would consider the sentiment of a document produced by country $c$ with respect to country $c'$. 
+
+As a case in point, consider MFA spokesperson Wang Wenbin's exchange with a reporter on February 22, 2021 with regard to the JCPOA: 
+
+\begin{displayquote}
+  China welcomes and commends [IAEA verification activities] and hopes that the two sides continue to work toward the same direction and earnestly follow through on this consensus. We also call on relevant sides to play a constructive role in this process. China holds that the return of the United States to the JCPOA is the only correct approach to resolve the impasse on the Iranian nuclear issue.
+\end{displayquote}
+
+While the document overall lauds multilateral cooperation towards a nuclear deal, and thus gets a positive sentiment score, Wang is directing veiled criticism towards the US for its withdrawal from the JCPOA. Thus, the document's stance towards the US is negative. A more nuanced stance classifier can take a two-step approach: first, it identifies whether a document from country $c$ is directed at country $c'$; then, it classifies the sentiment of the document with respect to country $c'$.
 
 % =====================================================================
 \section{Discussion of Key Findings}
 \label{sec:discussion}
-
-Although the Granger causality tests helped create a more coherent, and interesting, narrative from a crowded and jumbled set of sentiment polarity scores, these meaningful $p$-values must be married to some qualitative evaluation. Indeed, contrary to what its name implies, Granger causality is useful in detecting whether one time series holds predictive power over another, but it is inadequate if we want a definitive verdict on causal relations between two variables.
-
-However, one can establish a persuasive causal link if the textual data is put under closer qualitative scrutiny. If US texts directly acknowledge or even respond to their Chinese counterparts, or vice versa, then we have fairly strong evidence of \emph{causal} linkage between US and Chinese discourse.
-
-While it is impossible to sift through the entirety of my datasets, it would be advisable to look for these causal linkages through a case study method, whereby I manually review texts that underlie a specific feature in the time series.
-
-Perhaps the most acute feature dominating the bilateral discursive landscape---and threading through the entire course of my quantitative analysis---is the theme park rollercoaster behavior of US and Chinese sentiments from 2017 to 2018, whimsically and aptly dubbed ``the Trump bump.''
-
-% COMMENT (Berlinerblau), on "MFA spokesperson Hua Chunying": Nice
-This dramatic episode, whereby tentative rhetorical niceties from both sides collapsed into unrelenting insult-hurling after Trump unveiled his wave of tariffs, enjoys a rich presence in my datasets. MFA spokesperson Hua Chunying, for instance, stacked one cordial talking point on top of another in her press briefing on November 7, 2017, apparently rolling out a rhetorical red carpet ahead of Trump's anticipated state visit to Beijing, and attempting to woo the unpredictable newcomer to the White House. The following is an excerpt of Hua's statement:
-
-\begin{displayquote}
-The Chinese side is willing to work with the United States to act upon the important consensus reached by the two heads of state to focus on cooperation and properly manage differences in the spirit of mutual respect and mutual benefit so as to ensure the sustained, sound and steady growth of China-US relations. This not only serves the fundamental interests of the two peoples but also meets the shared expectations of countries around the world and the international community.
-\end{displayquote}
-
-Showered with the luxurious trappings of Chinese state hospitality, the Trump team reciprocated with positive rhetorical gestures of their own two days later:
-
-\begin{displayquote}
-To both the American delegation and to the Chinese business representatives here, your discussions greatly strengthen our partnership and provide a critical bridge between our business community and yours \ldots{} Both the United States and China will have a more prosperous future if we can achieve a level economic playing field.\footnote{On the temporary warming of relations between Trump and Xi, see \textcite{bbc2017}.}
-\end{displayquote}
-
-At this point, sentiments from both sides were climbing to an optimistic peak. Even as the Trump White House aired its grievances about issues such as the gaping trade deficit, it was quick to assign the blame to its American predecessors while absolving the Chinese of any apparent responsibility. A speech on March 5, 2018, for example, complained that ``We lost \$500 billion [to China]. How previous Presidents allowed that to happen is disgraceful.''
-
-However, amidst these rhetorical niceties, the Office of the US Trade Representative had been scrutinizing China's trade practices and promulgated their findings in a virulent, bombshell Section 301 investigation report in late March of 2018, which accused China of forced technology transfer practices, cyber-enabled IP theft, discriminatory licensing, as well as acquisitions of US assets masterminded by the state \autocite{hart2022}. After receiving news of this report, which seemed to be a harbinger for a colossal wall of tariffs on billions of dollars' worth of Chinese exports, the Chinese snapped back with heated indignation:
-
-\begin{displayquote}
-Certain American official's remarks that ``the era of economic surrender is over'' sounds quite awkward and it seems that they were trying to shift the blame. In fact, it would be more appropriate to say that it's time for the US economic intimidation and hegemony to end. The US side should be clear that what international trade needs in the 21st century is rules rather than power.
-\end{displayquote}
-
-The Trump presidency in turn dropped its cooperative guise and put its counterpart on full rhetorical blast. In late July, the President alleged that China's ``very abusive trade practices'' and its IP theft propelled it to ``go after our soybean farmers'' and to ``make \$500 billion \ldots{} off the big fat sloppy US.''
-
-Parsing the texts making up this particular topographical feature renders two pieces of insight salient. First, we get qualitative corroboration that the US, at least from late 2017 to 2018, does seem to take on a more ``reactive'' role in the discursive relationship, whereas China more often sits in the driver's seat. Indeed, studying both sets of data at a micro-level suggests that China---to some extent---does initiate the tentatively cordial gestures as well as the virulent insult-hurling (though behaviors of setting rhetorical trends must be distinguished from a tendency to initiate provocative or conciliatory actions; in this sense, my models cannot quite capture the fact that it was a slew of tariffs, rather than words, that started an avalanche of rhetorical negativity).
-
-This qualitative survey also demonstrates that a causal link between the two sentiment trends is ambiguous, or perhaps even elusive. Although the subject matter of the two governments' discourse often overlapped, an unequivocal indication that statements from the US dataset were directly replying to their Chinese counterparts (or vice versa) was lacking. Other segments of the time series dyad, moreover, offered even less topical or thematic overlap, and the portfolio of topics and events that made up the two datasets would be situated within non-intersecting discursive planes.
-
-In the absence of any unambiguous causal linkage, how do we interpret the meaningfulness of Granger causality tests? To pose this question in more qualitative terms, how can we situate the formation, promulgation, and interaction of two distinct strains of foreign policy discourse within a broader geopolitical canvas dominated by the clash of great powers?
 
 \subsection{What Are Ways to Explain Foreign Policy Discourse?}
 
@@ -491,7 +442,7 @@ In the absence of any unambiguous causal linkage, how do we interpret the meanin
 
 The most straightforward interpretation of foreign policy discourse for the purposes of this paper, of course, is simply that rhetoric is a good proxy for how policymakers from one country perceive their counterparts, and for the actual warmth of bilateral ties. This explanation is informed by Biwu Zhang's \emph{Chinese Perceptions of the US} \autocite*{zhang2011}, as well as David Shambaugh's \emph{Beautiful Imperialist} \autocite*{shambaugh1991}, which both enlist elite discourse ranging from state-affiliated academic publications to newspapers as a medium that reflects the abstract concept of how China perceives the US.
 
-When we apply this explanation, then the patterns of interaction picked up by Granger models serve as a proxy for the relationship between how the US perceives the state of its relationship with China, and vice versa. In this sense, the US's more ``reactive'' posture vis-à-vis Chinese sentiment trends demonstrates that China is often the first-comer in perceiving upturns, tensions, and discord in bilateral ties. However, once again, we must be cautious in not over-extending this insight about perceptions and rhetoric to claim that China is provocative in its diplomatic practice.
+Under this explanation, the patterns of interaction picked up by Granger models serve as a proxy for the relationship between how the US perceives the state of its relationship with China, and vice versa. In this sense, the US's more ``reactive'' posture vis-à-vis Chinese sentiment trends suggests that China is often the first to perceive upturns, tensions, and discord in bilateral ties. However, we must be careful not to over-extend this insight about perceptions and rhetoric to claim that China is provocative in its diplomatic practice.
 
 \subsubsection*{B. Discourse as a Constitutive and Productive Player}
 
@@ -499,28 +450,28 @@ While explanation \emph{A} encompasses a traditional understanding of foreign po
 
 % COMMENT (Berlinerblau), on "it is an active participant": This section seems like
 % a bit of a different paper. Different questions. Not sure what advice I have
-As such, foreign policy discourse is not just a transparent looking glass through which geopolitical truths are reflected; rather, it is an active participant in international relations of its own right that can signal and produce new norms, new behaviors, and new roles.
+As such, foreign policy discourse is not just a transparent looking glass through which geopolitical truths are reflected; rather, it is an active participant in international relations in its own right that can signal and produce new norms, new behaviors, and new roles.
 
-A case in point here is the reconstitution of Chinese foreign policy discourse under the Hu Jintao administration. Throughout the past decades, China had been operating under a ``minimalist'' foreign policy doctrine encapsulated by Deng's slogans ``hiding and biding'' (韬光养晦), as well as ``not taking the lead'' (不当头). However, China's miraculous growth spurt, coupled with an increasingly complex external environment, pushed Beijing to search for a new \emph{modus operandi} in the international arena. In this sense, Hu's new umbrella slogan for Chinese diplomacy, ``harmonious world'' (和谐世界), is a powerful message to the world that China was ready to come out of its metaphorical shell and enter a new developmental stage. Hu's foreign policy discourse, therefore, is not just a straightforward reflection of Chinese ambitions, but it is actively constituting a new role for the country to grow into. ``Harmonious world,'' and by extension Xi's ``community of common destiny'' (命运共同体), signal new geopolitical norms that China is trying to construct \autocite[29--32]{su2009}.
+A case in point here is the reconstitution of Chinese foreign policy discourse under the Hu Jintao administration. For the preceding two decades, China had been operating under a ``minimalist'' foreign policy doctrine encapsulated by Deng's slogans ``hiding and biding'' (韬光养晦), as well as ``not taking the lead'' (不当头). However, China's rapid growth, coupled with an increasingly complex external environment, pushed Beijing to search for a new \emph{modus operandi} in the international arena. In this sense, Hu's new umbrella slogan for Chinese diplomacy, ``harmonious world'' (和谐世界), signaled to the world that China was ready to come out of its metaphorical shell and enter a new developmental stage. Hu's foreign policy discourse, therefore, is not just a straightforward reflection of Chinese ambitions, but it is actively constituting a new role for the country to grow into. ``Harmonious world,'' and by extension Xi's ``community of common destiny'' (命运共同体), signal new geopolitical norms that China is trying to construct \autocite[29--32]{su2009}.
 
-Similarly, on the American side, the Obama-era mantra ``pivot to Asia,'' as well as the idea of ``America's Pacific Century'' (which crystallized in a \emph{Foreign Policy} essay penned by Secretary Clinton), both actively seek to construct new realities on the ground \autocite{clinton2011}. The ``pivot,'' therefore, constitutes a signpost orienting America towards a more proactive and enhanced presence in the Asia-Pacific theater \autocite{davidson2014}. Similar to Hu's ``harmonious world'' or Xi's ``common destiny,'' the Obama administration's foreign policy discourse has actively produced new norms and new dynamics within US-China diplomacy.
+Similarly, on the American side, the Obama-era mantra ``pivot to Asia,'' as well as the idea of ``America's Pacific Century'' (which crystallized in a \emph{Foreign Policy} essay penned by Secretary Clinton), both actively sought to construct new realities on the ground \autocite{clinton2011}. The ``pivot,'' therefore, constitutes a signpost orienting America towards a more proactive and enhanced presence in the Asia-Pacific theater \autocite{davidson2014}. Similar to Hu's ``harmonious world'' or Xi's ``common destiny,'' the Obama administration's foreign policy discourse has actively produced new norms and new dynamics within US-China diplomacy.
 
-From this viewpoint, discourse is imbued with a sort of power to constitute and legitimize ``new regimes of truth.'' According to Semenov and Tsvyk, moreover, the Chinese pay particularly close heed to the extent of their ``discourse power'' (话语权), which represents their ability to speak up on the international stage to popularize and legitimize their narratives and their worldviews \autocite[566]{semenov2021}.
+From this viewpoint, discourse is imbued with a sort of power to constitute and legitimize ``new regimes of truth.'' According to Semenov and Tsvyk, moreover, Chinese policymakers pay particularly close attention to their ``discourse power'' (话语权), which represents their ability to speak up on the international stage to popularize and legitimize their narratives and their worldviews \autocite[566]{semenov2021}.
 
-Given the norm-constituting powers of words, China's role as a ``trend-setter'' in foreign policy sentiments may put it in a position to steer the locomotive of discourse and harness all its constitutive power.
+Given the norm-constituting powers of words, China's role as a ``trend-setter'' in foreign policy sentiments may put it in a position to shape the terms of bilateral discourse and harness its constitutive power.
 
 \subsubsection*{C. Discourse as Performance and Theater}
 
-Explanations \emph{A} and \emph{B} both contribute to the utility of the Granger tests and affirm their applicability. This third explanation, on the other hand, acknowledges exogenous factors that may detract from meaningful interpretations of my methods. Namely, foreign policy discourse can, at times, be detached from foreign policy practices because it not only serves reflective, communicative, or norm-setting functions, but it is also highly \emph{performative}.
+Explanations \emph{A} and \emph{B} both imply that the Granger tests capture something meaningful about bilateral relations. This third explanation, on the other hand, acknowledges exogenous factors that may complicate the interpretation of my results. Namely, foreign policy discourse can, at times, be detached from foreign policy practices because it not only serves reflective, communicative, or norm-setting functions, but it is also highly \emph{performative}.
 
-For instance, discourse can serve this theatrical performance function for a country's broad populace. According to the scholars Sullivan and Wang, Hua Chunying's brand of fiery foreign policy discourse (which dominated the Trump case study above) is incentivized by ``cyber-nationalist'' pressures emanating from the bottom-up \autocite{sullivan2023}. But discourse does not always correspond to actual practice. Poh and Li's assessment of the Xi administration notably leans toward the idea that China's increasingly ambitious slogans, threats, and promises belie the abundance of foreign policy carry-over between Xi and his more mellow predecessors \autocite[95--97]{poh2017}.
+For instance, discourse can serve this theatrical performance function for a country's broad populace. According to Sullivan and Wang, Hua Chunying's brand of fiery foreign policy discourse (prominent in MFA press conferences during the Trump years) is incentivized by ``cyber-nationalist'' pressures emanating from the bottom up \autocite{sullivan2023}. But discourse does not always correspond to actual practice. Poh and Li argue that the Xi administration's increasingly ambitious slogans, threats, and promises mask substantial continuity in foreign policy between Xi and his more restrained predecessors \autocite[95--97]{poh2017}.
 
 What's more, a policymaker's rhetoric can also serve performative purposes for colleagues or superiors. Notably, an increasingly popular theory among China watchers is that faced with a slew of bureaucratic pressures, the MFA needed to deploy its most firebrand ``wolf warriors'' to the front lines of political discourse in order to avoid being shunted into irrelevance.
 
 % PORT: "National Development and Reform Corporation" -> "Commission".
-According to Zhao and Gao, as well as Jing Sun, the embattled MFA is being squeezed by bureaucratic pressures from all sides. For one, Xi is centralizing the decision-making pipeline by setting up Leading Small Groups (LSGs) with himself at the nexus, while excising the MFA from the political equation. At the same time, other agencies like the Ministry of Commerce (MOFCOM), the National Development and Reform Commission (NDRC), and the People's Liberation Army have been encroaching upon the MFA's turf \autocites[420, 422]{sun2017}[47]{zhao2015}. To stay afloat, the agency has to resort to jingoistic outbursts on the international stage to showcase its loyalty, as well as its ability to faithfully follow Xi's vision to the letter. As Peter Martin put very eloquently in his book \emph{China's Civilian Army}, the virulent ``Wolf Warrior'' rhetoric stems from the diplomatic corps being ``unable to extricate themselves from the constraints of a secretive, paranoid political system which rewards unquestioning loyalty and ideological conviction'' \autocite[5]{martin2021}.
+According to Zhao and Gao, as well as Jing Sun, the embattled MFA is being squeezed by bureaucratic pressures from all sides. For one, Xi is centralizing the decision-making pipeline by setting up Leading Small Groups (LSGs) with himself at the nexus, while sidelining the MFA. At the same time, other agencies like the Ministry of Commerce (MOFCOM), the National Development and Reform Commission (NDRC), and the People's Liberation Army have been encroaching upon the MFA's turf \autocites[420, 422]{sun2017}[47]{zhao2015}. To stay afloat, the agency has resorted to jingoistic outbursts on the international stage to showcase its loyalty, as well as its ability to follow Xi's vision to the letter. As Peter Martin puts it in \emph{China's Civilian Army}, the virulent ``Wolf Warrior'' rhetoric stems from the diplomatic corps being ``unable to extricate themselves from the constraints of a secretive, paranoid political system which rewards unquestioning loyalty and ideological conviction'' \autocite[5]{martin2021}.
 
-This bureaucratic turf wars theory also lends some credence to the idea that foreign policy discourse may not fully adhere to explanations \emph{A} and \emph{B}, and that it is always important to account for exogenous and domestic variables into the research calculus.
+This bureaucratic turf wars theory also lends some credence to the idea that foreign policy discourse may not fully adhere to explanations \emph{A} and \emph{B}, and that it is important to factor exogenous and domestic variables into the research calculus.
 
 % =====================================================================
 \section{Applications and Future Work}
@@ -528,117 +479,34 @@ This bureaucratic turf wars theory also lends some credence to the idea that for
 
 \subsection{A Cheap Yet Effective Relationship Monitor?}
 
-Interpreting political discourse through NLP and time-series analysis is useful because it provides a powerful, relatively cost-efficient, and highly interpretable proxy for the temperature of bilateral relations (as we discussed in explanation \emph{A} in the previous section). In this sense, by quantifying the emotional valence of the two countries' foreign policy discourse, it is possible to create a bilateral relations ``thermometer'' whose measurements are precise down to very granular increments of time, while also elucidating trends on a macro-scale.
+Interpreting political discourse through NLP and time-series analysis is useful because it provides a relatively cheap and interpretable proxy for the temperature of bilateral relations (as discussed in explanation \emph{A} in the previous section). By quantifying the emotional valence of the two countries' foreign policy discourse, it is possible to create a bilateral relations ``thermometer'' that takes readings at fine time intervals while also revealing long-run trends.
 
-To be sure, more and more scholars and institutions are trying to publish their own relationship monitors. Morning Consult, for example, curates and consistently updates a US-China Relations Barometer, which derives the positivity of US perceptions towards China (or vice versa) based on iterative polling of the general populace \autocite{morningconsult}. Research cited in my literature review has also produced truly invaluable contributions that have inspired this paper. \todo{The abridged version has no literature review section; reword.}
+To be sure, more and more scholars and institutions are trying to publish their own relationship monitors. Morning Consult, for example, curates and regularly updates a US-China Relations Barometer, which derives the positivity of US perceptions towards China (or vice versa) based on iterative polling of the general populace \autocite{morningconsult}. 
 
-However, whether it is state-of-the-art surveys or top-of-the-line research, gauging the temperature of the multifaceted ties between the US and China is time-consuming, and potentially expensive work. The survey methodology runs into further obstacles when we try to move from studying relatively more accessible public opinion to piercing the veil of secrecy that often shrouds policymakers' opinion. These problems are compounded when we try to expand our inquiry about the evolution of bilateral relations over two or more decades.
+However, gauging the temperature of the multifaceted ties between the US and China through surveys is time-consuming and potentially expensive work. The survey methodology runs into further obstacles when we try to move from studying relatively more accessible public opinion to piercing the veil of secrecy that often shrouds policymakers' opinion. These problems are compounded when we try to expand our inquiry about the evolution of bilateral relations over two or more decades.
 
-This paper builds upon all the existing literature on foreign policy discourse and perceptions by looking for a fast, efficient, long-term, and high-resolution relationship monitor. By gathering an expansive set of texts pertinent to the US-China relationship, and then inputting these extensive datasets into a sentiment analysis pipeline, I could generate quantifiable and granular measures of the warmth of bilateral ties spanning extensive time frames.
+This paper builds on the existing literature on foreign policy discourse and perceptions by developing a fast, efficient, long-term, and high-resolution relationship monitor. By gathering a large set of texts pertinent to the US-China relationship and feeding them into a sentiment analysis pipeline, I generate quantifiable and granular measures of the warmth of bilateral ties spanning extensive time frames.
 
 \subsection{The Long and Promising Road Ahead}
 
-Of course, the relationship monitor introduced here needs to be continuously reconfigured and tinkered in order to become a mature piece of technology. This paper will thus introduce two paths for future research branching from this initial ``proof of concept.'' The former possibility entails creating a more extensive, and more comprehensive dataset. This means harnessing the full computational potential of a larger server and mining textual data pertaining to a wider range of foreign policy stakeholders, such as the Politburo, the State Council, and MOFCOM in China, the National Security Council along with State and Defense in the US, or even think tanks and authoritative voices in the academy in both states.
+Of course, the relationship monitor introduced here needs considerable refinement before it becomes a mature tool. I see two paths for future research branching from this initial ``proof of concept.'' The first entails creating a larger and more comprehensive dataset. This means using greater computing resources to mine textual data pertaining to a wider range of foreign policy stakeholders, such as the Politburo, the State Council, and MOFCOM in China, the National Security Council along with State and Defense in the US, or even think tanks and authoritative voices in the academy in both states.
 
-The second path along the future research roadmap entails conducting textual analysis with increasingly sophisticated methods. Sentiment classification, for example, can also transcend the simple and rather limited binary spectrum ranging from positive to negative valence. We could also code a wide array of emotional frames, including anger, surprise, hopefulness, or perhaps the rhetoric is defined by more complex themes like persuasion, the sense of being threatened, or more ambivalent emotional baggage. Beyond situating texts along a tonal spectrum, it is also useful to consider how \emph{stances} (i.e.\ affirmation or negation regarding a particular political issue/entity) are reflected within different texts.
+The second path along the future research roadmap entails conducting textual analysis with increasingly sophisticated methods. Sentiment classification, for example, can move beyond a single spectrum ranging from negative to positive valence. We could also code emotional frames such as anger, surprise, or hope, or more complex themes such as persuasion, threat perception, or ambivalence. Beyond situating texts along a tonal spectrum, it is also useful to consider how \emph{stances} (i.e.\ affirmation or negation regarding a particular political issue or entity) are reflected within different texts, as discussed in \cref{sec:stance}.
 
-These enhanced classifiers, in addition, could integrate the computational prowess of some state-of-the-art algorithms ranging from Stanford's CoreNLP API to Google's BERT model.
+These enhanced classifiers could draw on transformer-based language models, from fine-tuned BERT classifiers to large language models.
 
 \subsection{Piercing the Veil of Perception}
 
-In \emph{Perception and Misperception}, the great international relations (IR) scholar Bob Jervis points out that a security dilemma, at its essence, can be traced back to the daunting challenge of understanding mutual perceptions between two states \autocite[xv]{jervis2017}. In this sense, the ``original sin'' spoiling US-China rapport is a psychology of distrust and suspicion that thrives amidst an environment of uncertainty.
+In \emph{Perception and Misperception}, Robert Jervis points out that a security dilemma, at its essence, can be traced back to the challenge of understanding mutual perceptions between two states \autocite[xv]{jervis2017}. In this sense, the ``original sin'' spoiling US-China rapport is a psychology of distrust and suspicion that thrives amidst an environment of uncertainty.
 
-Andrew Scobell, applying Jervis to US-China relations, remarks that both states are domestically pre-occupied, struggle with ``chronic empathy deficiency,'' and thus are growing alarmed by elevated threat perceptions as their power differentials shrink \autocite[664]{scobell2020}.
+Andrew Scobell, applying Jervis to US-China relations, remarks that both states are domestically preoccupied, struggle with ``chronic empathy deficiency,'' and thus are growing alarmed by elevated threat perceptions as their power differentials shrink \autocite[664]{scobell2020}.
 
-A data-driven relationship monitor, as proposed by this paper, by no means aspires to fully crack open the perennial puzzle of misperception. Rather, it could methodically reduce perceptual uncertainties by fielding immense sets of textual data containing what the US and Chinese governments say about each other. In other words, my research attempts to marry a theoretical conundrum in IR with a core, underlying philosophy in quantitative analysis---that gathering larger sets of sample data increases our confidence in estimating the true features of a population. As such, by parsing and synthesizing a large number of accessible data points that very imperfectly represents bilateral perceptions, it is possible to \emph{estimate} the true parameter of perceptual realities underlying the US-China stand-off.
-
-% COMMENT (Berlinerblau), end of paper: Alex. This is complex and impressive work.
-% The econometric sections are--to my eye--amazing and I sense to others as well.
-% The less quant side of the piece is fine though it lacks a "take-home" which is
-% what this audience wants. I think the "take-home" is already present in the paper,
-% you just need to articulate it with more alliance. If you were a policy maker what
-% would the lesson be to be derived from this paper? There seem to be 2 papers, one
-% on method and one on policy. I do like both sections though! Where to publish?
-% Here's my question: what are the top ten journals for econometrics and IR? That is
-% where this piece belongs, at that intersection. I feel the innovation is the use
-% of the tools and their development. What kind of journal is into that? There is
-% also an 8 page Foreign Affairs piece in this. Something that gives us the take-home
-% and hides the data architecture. I feel you should pursue two tracks 1) Make this
-% piece even more friendly to an econometric/IR journal, 2) then start writing about
-% your findings for an audience of China IR specialists who will take it on trust
-% that your tools are solid. Task 1 means you could lop off some sections here.
-% Task 2 is how you force yourself to see the Big Picture and you don't have to
-% spend 30 pages on explaining datasets. I guess 1 should precede 2. My question for
-% you: what are the journals that do 1? This is such impressive work!
+A data-driven relationship monitor could reduce perceptual uncertainties by drawing on large volumes of text containing what the US and Chinese governments say about each other. By parsing and synthesizing many accessible data points that only imperfectly represent bilateral perceptions, it is possible to \emph{estimate} the latent perceptions underlying the US-China stand-off.
 
 % =====================================================================
 \begin{singlespace}
 \setlength{\bibitemsep}{0.6\baselineskip}
 \printbibliography[title={References}]
 \end{singlespace}
-
-% =====================================================================
-% Appendix: replicated exhibits that the abridged text does not discuss.
-\clearpage
-\appendix
-\section*{Appendix: Additional Figures and Tables}
-\addcontentsline{toc}{section}{Appendix}
-\setcounter{figure}{0}
-\setcounter{table}{0}
-\renewcommand{\thefigure}{A\arabic{figure}}
-\renewcommand{\thetable}{A\arabic{table}}
-
-\input{../../figures/output/06_sentiment_stats.tex}
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{07_china_confusion.pdf}
-  \caption{Confusion matrices for sentiment classification of Chinese texts}
-  \label{fig:china-confusion}
-\end{figure}
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{08_us_confusion.pdf}
-  \caption{Confusion matrices for sentiment classification of US texts}
-  \label{fig:us-confusion}
-\end{figure}
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{12_granger_tree.pdf}
-  \caption{Bidirectional, bivariate Granger causality tree}
-  \label{fig:granger-tree}
-\end{figure}
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{22_taiwan_sentiment.pdf}
-  \caption{US and Chinese sentiments towards Taiwan over time}
-  \label{fig:taiwan-sent}
-\end{figure}
-
-\input{../../figures/output/25_granger_topics_2015.tex}
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{26_positive_doc_share.pdf}
-  \caption{Relative count of positive documents over time}
-  \label{fig:positive-share}
-\end{figure}
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{27_negative_doc_share.pdf}
-  \caption{Relative count of negative documents over time}
-  \label{fig:negative-share}
-\end{figure}
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{28_granger_tree_findings.pdf}
-  \caption{Bivariate Granger causality tree with summary of findings}
-  \label{fig:granger-tree-findings}
-\end{figure}
 
 \end{document}

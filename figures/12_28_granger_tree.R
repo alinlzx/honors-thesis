@@ -3,22 +3,24 @@
 #
 # Tree (as Figure 12 of the thesis, redrawn): filter -> data -> time series ->
 # bivariate Granger test, both directions. Specifications that were run are dark;
-# those that were not are dashed outlines. As in the thesis, topic and polarity series
-# are built only from the full data and by month (by week, or from MFA/Presidential
+# those that were not are dashed outlines. As in the thesis, topic series are built
+# only from the full data and by month (by week, or from MFA/Presidential
 # documents alone, too many periods have no document). The thesis's backward-dating
-# windows are struck out: they are not part of the rebuilt analysis.
+# windows are struck out: they are not part of the rebuilt analysis. The thesis's
+# sentiment-polarity branch (counts of positive / negative documents) is dropped.
 #
 # Results (Figure 28 only), one cell per test; colour = which response is
 # significant at p < 0.05:
 #   Topic:    monthly mean score of each topic's documents (topic_months() in
 #             setup.R), full data, 3 lags; all months after 1 January 2002 (the full
-#             overlap, Figure 24) and after 1 January 2015 (Figure 25).
-#   Polarity: monthly counts of clearly positive / negative documents, first-
-#             differenced (polarity_series() in setup.R, as posneg() + stationary_df()
-#             in time_series_analysis.Rmd), 2 lags as in the Rmd; same two windows.
+#             overlap, Figure 24) and after 1 January 2015 (Figure 25), drawn as two
+#             branches off the topic / full data / month leaf.
 #   Time:     forward dating: periods after 1 January of each year 2002-2020, 3 lags.
 #             Weekly series as Figures 13 (MFA/Pres) and 14 (full data); monthly
 #             series the same way by calendar month.
+# Every pair goes through the ADF rule in setup.R (stationarity_method()): levels if
+# both series are stationary, first differences if neither is, Toda-Yamamoto if only
+# one is; decided on the pair's full sample and kept for every window.
 #
 # Input:  honors-thesis-original-data/sentiments/05_*_scored.csv (score: SCORE_VERSION)
 # Output: figures/output/12_granger_tree.pdf, 28_granger_tree_findings.pdf
@@ -26,9 +28,9 @@
 source(if (file.exists("figures/setup.R")) "figures/setup.R" else "setup.R")
 
 LAG_ORDER <- 3
-POLARITY_LAG_ORDER <- 2
 START_YEARS <- 2002:2020
 WINDOWS <- c(All = "2002-01-01", "2015+" = "2015-01-01")
+WINDOW_LABELS <- c(All = "All years", "2015+" = "2015 onward")
 TOPIC_SHORT <- c(trade = "Trade & finance", domestic_periphery = "Domestic periphery", tw = "Taiwan",
                  multi = "Multilateral", scs = "South China Sea", epidem = "Global health", russia = "Russia")
 
@@ -41,47 +43,39 @@ pairs <- list(mfa_pres = list(us = filter(dated, source == "pres"), ch = filter(
 builders <- list(week = weekly_series, month = monthly_series)
 
 time_res <- bind_rows(lapply(names(pairs), function(p) bind_rows(lapply(names(builders), function(b) {
-  us <- builders[[b]](pairs[[p]]$us); ch <- builders[[b]](pairs[[p]]$ch)
-  bind_rows(lapply(START_YEARS, function(y) {
-    granger_p(us, ch, as.Date(paste0(y, "-01-01")), LAG_ORDER) %>% mutate(row = as.character(y))
-  })) %>% mutate(data = p, interval = b)
+  granger_by_start(builders[[b]](pairs[[p]]$us), builders[[b]](pairs[[p]]$ch),
+                   as.Date(paste0(START_YEARS, "-01-01")), LAG_ORDER) %>%
+    mutate(row = format(start, "%Y"), data = p, interval = b)
 })))) %>% mutate(family = "time", col = "")
 
 series <- filter(dated, in_series)
 topic_series <- lapply(c(US = "US", China = "China"), function(ctry) {
   topic_months(filter(series, country == ctry)) %>% transmute(topic, period = month, senti = topic_sentiment)
 })
-topic_res <- bind_rows(lapply(names(TOPIC_SHORT), function(t) bind_rows(lapply(names(WINDOWS), function(w) {
-  granger_p(filter(topic_series$US, topic == t) %>% select(-topic),
-            filter(topic_series$China, topic == t) %>% select(-topic), as.Date(WINDOWS[[w]]), LAG_ORDER) %>%
-    mutate(row = TOPIC_SHORT[[t]], col = w)
-})))) %>% mutate(family = "topic", data = "full", interval = "month")
+topic_res <- bind_rows(lapply(names(TOPIC_SHORT), function(t) {
+  granger_by_start(filter(topic_series$US, topic == t) %>% select(-topic),
+                   filter(topic_series$China, topic == t) %>% select(-topic), as.Date(WINDOWS), LAG_ORDER) %>%
+    mutate(row = TOPIC_SHORT[[t]], col = names(WINDOWS)[match(start, as.Date(WINDOWS))])
+})) %>% mutate(family = "topic", data = "full", interval = "month")
 
-polarity_docs <- list(China = filter(docs, country == "China"), US = filter(docs, in_series, country == "US"))
-polarity_res <- bind_rows(lapply(c(Positive = 1, Negative = -1), function(dir) {
-  us <- polarity_series(polarity_docs$US, dir); ch <- polarity_series(polarity_docs$China, dir)
-  bind_rows(lapply(names(WINDOWS), function(w) {
-    granger_p(us, ch, as.Date(WINDOWS[[w]]), POLARITY_LAG_ORDER) %>% mutate(col = w)
-  }))
-}), .id = "row") %>% mutate(family = "polarity", data = "full", interval = "month")
-
-results <- bind_rows(time_res, topic_res, polarity_res) %>%
+results <- bind_rows(time_res, topic_res) %>%
   mutate(outcome = granger_outcome(us_response, china_response))
 
 # ---- Layout (all coordinates in inches; the figure is drawn 1:1) ------------------------------
 FIG_W <- 6.5
 X0 <- 0.12                      # left edge of the tree
-LEAF_W <- 0.40; LEAF_GAP <- 0.06; PAIR_GAP <- 0.14; FAM_GAP <- 0.34
-PAIR_W <- 2 * LEAF_W + LEAF_GAP
-FAM_W <- 2 * PAIR_W + PAIR_GAP
-FAMILIES <- c(topic = "Topic", polarity = "Sentiment polarity", time = "Time window")
+FAMILIES <- c(topic = "Topic", time = "Time window")
+LEAF_GAP <- 0.06; PAIR_GAP <- 0.14; FAM_GAP <- 0.34
+FAM_W <- (FIG_W - 2 * X0 - (length(FAMILIES) - 1) * FAM_GAP) / length(FAMILIES)
+PAIR_W <- (FAM_W - PAIR_GAP) / 2
+LEAF_W <- (PAIR_W - LEAF_GAP) / 2
 DATA <- c(mfa_pres = "MFA / Presidential", full = "Full data")
 INTERVALS <- c(week = "Week", month = "Month")
 RUN <- function(family, data = NULL, interval = NULL) {
   family == "time" || ((is.null(data) || data == "full") && (is.null(interval) || interval == "month"))
 }
 
-fam_x <- setNames(X0 + (0:2) * (FAM_W + FAM_GAP), names(FAMILIES))
+fam_x <- setNames(X0 + (seq_along(FAMILIES) - 1) * (FAM_W + FAM_GAP), names(FAMILIES))
 leaves <- expand.grid(interval = names(INTERVALS), data = names(DATA), family = names(FAMILIES),
                       stringsAsFactors = FALSE) %>%
   mutate(xmin = fam_x[family] + (data == "full") * (PAIR_W + PAIR_GAP) + (interval == "month") * (LEAF_W + LEAF_GAP),
@@ -149,7 +143,7 @@ build_tree <- function(with_results) {
   NODE_H <- 0.25
   dn <- data_nodes %>% mutate(ymax = tops[["data"]] - 0.2, ymin = ymax - NODE_H, label = DATA[data])
   lv <- leaves %>% mutate(ymax = tops[["series"]] - 0.2, ymin = ymax - NODE_H, label = INTERVALS[interval])
-  test_box <- tibble(xmin = X0, xmax = X0 + 3 * FAM_W + 2 * FAM_GAP,
+  test_box <- tibble(xmin = X0, xmax = X0 + length(FAMILIES) * FAM_W + (length(FAMILIES) - 1) * FAM_GAP,
                      ymax = tops[["test"]] - 0.2, ymin = tops[["test"]] - 0.2 - 0.27)
 
   box_rows <- bind_rows(
@@ -163,8 +157,7 @@ build_tree <- function(with_results) {
     dn %>% transmute(x, y = (ymin + ymax) / 2, label, colour = node_style(run)$text, face = "plain"),
     lv %>% transmute(x, y = (ymin + ymax) / 2, label, colour = node_style(run)$text, face = "plain"),
     test_box %>% transmute(x = (xmin + xmax) / 2, y = (ymin + ymax) / 2, colour = INK, face = "plain",
-                           label = sprintf("Bivariate Granger causality test in both directions (%d lags; polarity counts: %d lags)",
-                                           LAG_ORDER, POLARITY_LAG_ORDER)))
+                           label = sprintf("ADF unit root check, then bivariate Granger causality test in both directions (%d lags)", LAG_ORDER)))
 
   # Options listed in each filter card
   OPT_SIZE <- 2.15
@@ -172,10 +165,9 @@ build_tree <- function(with_results) {
   opt_text <- tibble(
     x = fam_x + FAM_W / 2, y = body_mid,
     label = c("Trade & finance  ·  Domestic periphery  ·  Taiwan\nMultilateral negotiations  ·  South China Sea\nGlobal health  ·  Russia",
-              "Positive documents  ·  Negative documents\n(monthly counts, mean ± 0.1 SD)",
               "Forward dating: data after 1 January\nof each year, 2002 to 2020\n "))
   struck <- "Backward dating"
-  strike_y <- body_mid[3] - 0.13
+  strike_y <- body_mid[2] - 0.13
   strike_w <- text_w(struck, OPT_SIZE)
   strike <- tibble(x = fam_x[["time"]] + FAM_W / 2, y = strike_y, label = struck)
 
@@ -197,7 +189,7 @@ build_tree <- function(with_results) {
                   xmax = numeric(), ymin = numeric(), ymax = numeric(), outcome = character())
   cell_text <- tibble()
   if (with_results) {
-    CELL_H <- 0.105; PITCH <- 0.125; CELL_W2 <- 0.17
+    CELL_H <- 0.105; PITCH <- 0.125; CELL_W <- 0.36; WIN_OFFSET <- 0.36
     row_top <- tops[["result"]] - 0.36
     lab_size <- 2.05
     place <- function(r, x, width) {
@@ -205,38 +197,38 @@ build_tree <- function(with_results) {
                    ymax = row_top - (row_i - 1) * PITCH, ymin = ymax - CELL_H)
     }
     leaf_x <- function(f, d, i) filter(leaves, family == f, data == d, interval == i)$x
-    # topic and polarity: two window columns under the run leaf
-    grid2 <- function(f, row_levels) {
-      cx <- leaf_x(f, "full", "month")
-      r <- filter(results, family == f) %>% mutate(row_i = match(row, row_levels))
-      bind_rows(place(filter(r, col == "All"), cx - (CELL_W2 / 2 + 0.01), CELL_W2),
-                place(filter(r, col == "2015+"), cx + (CELL_W2 / 2 + 0.01), CELL_W2))
-    }
-    topic_cells <- grid2("topic", unname(TOPIC_SHORT))
-    pol_cells <- grid2("polarity", c("Positive", "Negative"))
+    # topic: the run leaf branches into two windows (all years, 2015 onward)
+    topic_x <- leaf_x("topic", "full", "month")
+    r <- filter(results, family == "topic") %>% mutate(row_i = match(row, unname(TOPIC_SHORT)))
+    # (both columns sit left of the leaf, clear of the year labels of the time results)
+    topic_cells <- bind_rows(place(filter(r, col == "All"), topic_x - 0.10 - 2 * WIN_OFFSET, CELL_W),
+                             place(filter(r, col == "2015+"), topic_x - 0.10, CELL_W))
     time_cells <- bind_rows(lapply(seq_len(nrow(filter(leaves, family == "time"))), function(i) {
       l <- filter(leaves, family == "time")[i, ]
       filter(results, family == "time", data == l$data, interval == l$interval) %>%
-        mutate(row_i = match(row, as.character(START_YEARS))) %>% place(l$x, 0.30)
+        mutate(row_i = match(row, as.character(START_YEARS))) %>% place(l$x, CELL_W)
     }))
-    cells <- bind_rows(topic_cells, pol_cells, time_cells)
+    cells <- bind_rows(topic_cells, time_cells)
 
     row_labels <- bind_rows(
       topic_cells %>% filter(col == "All") %>% transmute(x = xmin - 0.04, y = (ymin + ymax) / 2, label = row),
-      pol_cells %>% filter(col == "All") %>% transmute(x = xmin - 0.04, y = (ymin + ymax) / 2, label = row),
       time_cells %>% filter(data == "mfa_pres", interval == "week") %>%
         transmute(x = xmin - 0.04, y = (ymin + ymax) / 2, label = row)) %>% mutate(hjust = 1, size = lab_size)
-    col_heads <- bind_rows(topic_cells, pol_cells) %>% filter(row_i == 1) %>%
-      transmute(x = (xmin + xmax) / 2, y = ymax + 0.07, label = col, hjust = 0.5, size = 1.95)
+    col_heads <- topic_cells %>% filter(row_i == 1) %>%
+      transmute(x = (xmin + xmax) / 2, y = ymax + 0.07, label = WINDOW_LABELS[col], hjust = 0.5, size = 1.95)
     year_head <- time_cells %>% filter(row_i == 1, data == "mfa_pres", interval == "week") %>%
       transmute(x = xmin - 0.04, y = ymax + 0.07, label = "After", hjust = 1, size = 1.95)
     cell_text <- bind_rows(row_labels, col_heads, year_head)
 
     # connectors from the test box to each block of results
-    blocks <- cells %>% group_by(family, data, interval) %>%
+    blocks <- cells %>% group_by(family, data, interval, col) %>%
       summarise(x = (min(xmin) + max(xmax)) / 2, top = max(ymax), .groups = "drop") %>%
       mutate(top = top + ifelse(family == "time", 0.03, 0.14))
-    edges <- bind_rows(edges, blocks %>% transmute(x, y = test_box$ymin, xend = x, yend = top, run = TRUE))
+    time_blocks <- filter(blocks, family == "time")
+    topic_blocks <- filter(blocks, family == "topic")
+    edges <- bind_rows(edges,
+                       time_blocks %>% transmute(x, y = test_box$ymin, xend = x, yend = top, run = TRUE),
+                       elbow(topic_x, test_box$ymin, topic_blocks$x, topic_blocks$top, rep(TRUE, nrow(topic_blocks))))
   }
 
   # Legend: one row below the tree (Figure 12), or two columns in the empty lower left
@@ -250,7 +242,7 @@ build_tree <- function(with_results) {
     step <- 0.17
     base <- tops[["result"]] - heights[["result"]] + 0.12
     keys <- keys %>% mutate(col = ifelse(kind == "outcome", 2, 1), k = ave(seq_along(col), col, FUN = seq_along),
-                            xmin = ifelse(col == 1, X0 + 0.25, fam_x[["polarity"]] + 0.25),
+                            xmin = ifelse(col == 1, X0 + 0.25, X0 + 1.45),
                             y = base + (4 - k) * step)   # both columns hang from the same top
     leg_titles <- keys %>% group_by(col) %>% summarise(x = first(xmin), y = max(y) + step) %>%
       mutate(label = c("Specification", "Significant Granger causality (p < 0.05)")[col]) %>% select(x, y, label)
@@ -281,12 +273,14 @@ build_tree <- function(with_results) {
 
   g <- ggplot() +
     geom_rect(data = bands, aes(xmin = 0, xmax = FIG_W, ymin = ymin, ymax = ymax), fill = BAND) +
-    geom_text(data = bands, aes(X0, ymax - 0.05, label = label), hjust = 0, vjust = 1,
-              family = FONT, fontface = "bold", size = 2.4, colour = "grey35") +
     geom_segment(data = filter(edges, !run), aes(x, y, xend = xend, yend = yend),
                  colour = OFF, linewidth = 0.35, linetype = "22") +
     geom_segment(data = filter(edges, run), aes(x, y, xend = xend, yend = yend),
                  colour = INK, linewidth = 0.5, lineend = "square") +
+    # band labels drawn over the connectors, on the band colour, so no line runs through them
+    geom_label(data = bands, aes(X0, ymax - 0.05, label = label), hjust = 0, vjust = 1,
+               family = FONT, fontface = "bold", size = 2.4, colour = "grey35", fill = BAND,
+               linewidth = 0, label.padding = unit(0.6, "pt"), label.r = unit(0, "pt")) +
     geom_polygon(data = boxes_df(bind_rows(box_rows, leg_boxes)),
                  aes(x, y, group = id, fill = fill, colour = colour, linetype = linetype), linewidth = 0.4) +
     geom_text(data = node_text, aes(x, y, label = label, colour = colour, fontface = face),
